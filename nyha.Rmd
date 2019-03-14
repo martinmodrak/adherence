@@ -11,8 +11,18 @@ library(cowplot)
 ```
 
 ```{r}
-data <- read_excel(here("private_data","Excel pro statistika.xlsx"), range = "A1:C93") %>%
-  mutate(Adherence = factor(Adherence, levels = c(1,2), labels = c("Adherentní", "Neadherentní")))
+main_data <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "BJ2:BL94", ) 
+
+adherence <- read_excel(here("private_data","Spiroergometrie - soubor pacientu 27.2. - kopie pro statistiku.xlsx"), sheet ="List1", range = "F2:F93", col_names = "Adherence") 
+
+data <- cbind(main_data, adherence) %>%
+  mutate(Adherence = factor(Adherence, levels = c(1:6), labels = c("Plně adherentní","Pravděpodobně adherentní","Možná neadherentní","Částečně neadherentní","Pravděpodobně neadherentní","Plně neadherentní"))) %>%
+  rename(`NYHA spiro` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`)
+
+NYHA_VO2max_threshold = c(0, 10, 16, 20, 1000)
+NYHA_check <- data$VO2max %>% cut(NYHA_VO2max_threshold, labels = 4:1) %>% as.character() %>% as.numeric()
+
+NYHA_check == data$`NYHA spiro`
       
 ```
 
@@ -29,6 +39,10 @@ data %>% ggplot(aes(x = `NYHA subjektivně`, y = `NYHA objektivně`, color = Adh
   expand_limits(x = exp_limits, y = exp_limits) +
   theme(panel.grid.minor = element_line(colour = "lightgray"))
 ```
+
+Co tečka, to pacient, umístění v rámci obdélníků je náhodné. Barevné čáry - proložený trend zvlášť pro každou skupinu - pás kolem je nejistota, v zásadě jsou všechny přímky ležící uvnitř pásu konzistentní s daty. Černá šikmá čára je "ideální trend", kdyby objektivní a subjektivní měřily tu samou věc a jejich rozdíly byl jen náhodný šum, tak by proložený trend měl ležet na černé čáře. Z toho, že jsou od černé čáry dost daleko lze usoudit, že rozdíl je systematický.
+Naopak vidíme, že adherentní a neadherentní pacienti mají trend téměř totožný.
+
 
 ```{r}
 data %>% group_by(Adherence) %>% summarise(korelace = cor(`NYHA subjektivně`,`NYHA objektivně`)) %>%
