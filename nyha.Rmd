@@ -11,20 +11,25 @@ library(cowplot)
 ```
 
 ```{r}
-main_data <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "BJ2:BL94", ) 
+main_data <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "BJ2:BL94") 
 
-adherence <- read_excel(here("private_data","Spiroergometrie - soubor pacientu 27.2. - kopie pro statistiku.xlsx"), sheet ="List1", range = "F2:F93", col_names = "Adherence") 
+id <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "A2:A94")
 
-data <- cbind(main_data, adherence) %>%
+adherence <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="List1", range = "F2:F93", col_names = "Adherence") 
+
+
+NYHA_VO2max_threshold = c(0, 10-1e-6, 16, 20+1e-6, 1000)
+
+data <- cbind(id,main_data, adherence) %>%
   mutate(Adherence = factor(Adherence, levels = c(1:6), labels = c("Plně adherentní","Pravděpodobně adherentní","Možná neadherentní","Částečně neadherentní","Pravděpodobně neadherentní","Plně neadherentní"))) %>%
-  rename(`NYHA spiro` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`)
+  rename(`NYHA spiro` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`) %>%
+  mutate(`NYHA vypočteno` = data$VO2max %>% cut(NYHA_VO2max_threshold, labels = 4:1, right = FALSE) %>% as.character() %>% as.numeric())
 
-NYHA_VO2max_threshold = c(0, 10, 16, 20, 1000)
-NYHA_check <- data$VO2max %>% cut(NYHA_VO2max_threshold, labels = 4:1) %>% as.character() %>% as.numeric()
-
-NYHA_check == data$`NYHA spiro`
+data %>% filter(`NYHA vypočteno` != `NYHA spiro`) %>% select(-`NYHA subj.`,-Adherence)
       
 ```
+
+Data obsahují `r nrow(data)` pacientů.
 
 ```{r}
 breaks <- c(2:4 - 0.5)
