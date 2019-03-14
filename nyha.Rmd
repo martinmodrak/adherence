@@ -1,0 +1,42 @@
+---
+title: "NYHA"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+library(here)
+library(cowplot)
+```
+
+```{r}
+data <- read_excel(here("private_data","Excel pro statistika.xlsx"), range = "A1:C93") %>%
+  mutate(Adherence = factor(Adherence, levels = c(1,2), labels = c("Adherentní", "Neadherentní")))
+      
+```
+
+```{r}
+breaks <- c(2:4 - 0.5)
+jitter_size <- 0.2
+exp_limits <- c(1 - jitter_size - 0.1, 4 + jitter_size + 0.1)
+data %>% ggplot(aes(x = `NYHA subjektivně`, y = `NYHA objektivně`, color = Adherence, fill = Adherence, group = Adherence)) + 
+  geom_abline(slope = 1, intercept = 0) +
+  geom_smooth(method = "lm", alpha = 0.15) + 
+  geom_jitter(width = jitter_size, height = jitter_size, size = 2) +
+  scale_x_continuous(minor_breaks = breaks) +
+  scale_y_continuous(minor_breaks = breaks) +
+  expand_limits(x = exp_limits, y = exp_limits) +
+  theme(panel.grid.minor = element_line(colour = "lightgray"))
+```
+
+```{r}
+data %>% group_by(Adherence) %>% summarise(korelace = cor(`NYHA subjektivně`,`NYHA objektivně`)) %>%
+  rbind(data %>% summarise(korelace = cor(`NYHA subjektivně`,`NYHA objektivně`)) %>% mutate(Adherence = "Vše"))
+```
+
+
+Dotazy:
+- 
+- Podrobnější data (spirometrie, detaily adherence)
+- 
