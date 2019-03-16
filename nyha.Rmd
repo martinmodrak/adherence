@@ -1,5 +1,5 @@
 ---
-title: "NYHA"
+title: "NYHA by spiro to subjective NYHA"
 output: html_notebook
 ---
 
@@ -8,6 +8,9 @@ library(tidyverse)
 library(readxl)
 library(here)
 library(cowplot)
+library(scales)
+library(brms)
+options(mc.cores = parallel::detectCores())
 ```
 
 ```{r}
@@ -18,29 +21,55 @@ id <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. -
 adherence <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="List1", range = "F2:F93", col_names = "Adherence") 
 
 
-NYHA_VO2max_threshold = c(0, 10-1e-6, 16, 20+1e-6, 1000)
 
 data <- cbind(id,main_data, adherence) %>%
-  mutate(Adherence = factor(Adherence, levels = c(1:6), labels = c("Plně adherentní","Pravděpodobně adherentní","Možná neadherentní","Částečně neadherentní","Pravděpodobně neadherentní","Plně neadherentní"))) %>%
-  rename(`NYHA spiro` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`) %>%
-  mutate(`NYHA vypočteno` = data$VO2max %>% cut(NYHA_VO2max_threshold, labels = 4:1, right = FALSE) %>% as.character() %>% as.numeric())
+  mutate(Adherence = factor(Adherence, ordered = TRUE, levels = c(1:6), labels = c("Plně adherentní","Pravděpodobně adherentní","Možná neadherentní","Částečně neadherentní","Pravděpodobně neadherentní","Plně neadherentní"))) %>%
+  rename(`NYHA spiro tabulka` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`) %>%
+  mutate(`NYHA subj.` = as.integer(`NYHA subj.`))
 
-data %>% filter(`NYHA vypočteno` != `NYHA spiro`) %>% select(-`NYHA subj.`,-Adherence)
-      
+NYHA_VO2max_threshold = c(10, 16, 20)
+NYHA_VO2max_breaks = c(min(data$VO2max)-0.01, 10-1e-6, 16, 20+1e-6, max(data$VO2max) + 0.1)
+
+
+data <- data %>%
+  mutate(`NYHA spiro` = data$VO2max %>% cut(NYHA_VO2max_breaks, labels = 4:1, right = FALSE) %>% as.character() %>% as.integer()) %>%
+  mutate(`Adherence skupina` = factor(if_else(Adherence <= "Možná neadherentní", "Adherentní","Neadherentní")),
+       `NYHA konzistentní` = factor(`NYHA subj.` == `NYHA spiro`, levels = c(TRUE,FALSE), labels = c("Ano","Ne")))
+
 ```
 
 Data obsahují `r nrow(data)` pacientů.
+
+Některá spiro NYHA v tabulce nesedí se spiro daty.
+
+```{r}
+data %>% filter(`NYHA spiro tabulka` != `NYHA spiro`) %>% select(-`NYHA subj.`,-Adherence) %>% rename(`NYHA spiro vypočteno` = `NYHA spiro`)
+```
+
+```{r}
+data %>% group_by(Adherence) %>% summarise(pocet = n())
+```
+
+```{r}
+#colors_adherence <- c('#b2182b','#d6604d','#f4a582','#92c5de','#4393c3','#2166ac')
+colors_adherence <- c('#d73027','#f46d43','#fdae61','#abd9e9','#74add1','#4575b4')
+colors_adherence_skupina <- colors_adherence[c(2,5)]
+```
+
 
 ```{r}
 breaks <- c(2:4 - 0.5)
 jitter_size <- 0.2
 exp_limits <- c(1 - jitter_size - 0.1, 4 + jitter_size + 0.1)
-data %>% ggplot(aes(x = `NYHA subjektivně`, y = `NYHA objektivně`, color = Adherence, fill = Adherence, group = Adherence)) + 
+data %>%
+  ggplot(aes(y = `NYHA subj.`, x = `NYHA spiro`, color = `Adherence skupina`, fill = `Adherence skupina`, group = `Adherence skupina`)) + 
   geom_abline(slope = 1, intercept = 0) +
   geom_smooth(method = "lm", alpha = 0.15) + 
   geom_jitter(width = jitter_size, height = jitter_size, size = 2) +
   scale_x_continuous(minor_breaks = breaks) +
   scale_y_continuous(minor_breaks = breaks) +
+  # scale_color_manual(values = colors_adherence_skupina) +
+  # scale_fill_manual(values = colors_adherence_skupina) +
   expand_limits(x = exp_limits, y = exp_limits) +
   theme(panel.grid.minor = element_line(colour = "lightgray"))
 ```
@@ -50,12 +79,108 @@ Naopak vidíme, že adherentní a neadherentní pacienti mají trend téměř to
 
 
 ```{r}
-data %>% group_by(Adherence) %>% summarise(korelace = cor(`NYHA subjektivně`,`NYHA objektivně`)) %>%
-  rbind(data %>% summarise(korelace = cor(`NYHA subjektivně`,`NYHA objektivně`)) %>% mutate(Adherence = "Vše"))
+data %>% group_by(`Adherence skupina`) %>% summarise(korelace = cor(`NYHA subj.`,`NYHA spiro`)) %>%
+  rbind(data %>% summarise(korelace = cor(`NYHA subj.`,`NYHA spiro`)) %>% mutate(`Adherence skupina` = "Vše"))
 ```
 
 
-Dotazy:
-- 
-- Podrobnější data (spirometrie, detaily adherence)
-- 
+
+```{r}
+step_data <- tibble(VO2max = NYHA_VO2max_threshold, NYHA = c(4:1,1))
+data %>%
+  ggplot(aes(y = `NYHA subj.`, x = VO2max, color = `Adherence skupina`)) + 
+  geom_step(aes(x = VO2max, y = NYHA), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2) +
+  geom_smooth(method = loess, group = 1, color = "gray", alpha = 0.3) +
+  geom_jitter(width = 0, height = 0.05, size = 2) +
+  scale_x_continuous(minor_breaks = NYHA_VO2max_breaks) +
+  scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
+  expand_limits(y = exp_limits) +
+  #scale_color_manual(values = colors_adherence_skupina) +
+  theme(panel.grid.minor = element_line(colour = "lightgray"))
+
+```
+
+```{r}
+data %>% ggplot(aes(x = VO2max)) + geom_histogram(binwidth = 2)
+```
+
+
+```{r}
+data_brms <- data %>% rename(NYHA_subj = `NYHA subj.`)
+fit_boundaries <- brm(NYHA_subj ~ VO2max, family = cumulative("logit"), data = data_brms, file = here("stored_fits","boundaries.rds"))
+fit_boundaries
+```
+```{r}
+pp_check(fit_boundaries, type = "hist", binwidth = 1, nsamples = 24)
+```
+```{r}
+plot_fitted_trend <- function(fit, adherence = FALSE) {
+  data_to_predict <- tibble(VO2max = 5:40)
+  if(adherence) {
+    data_to_predict <- data_to_predict %>% crossing(Adherence = c("Plně adherentní","Plně neadherentní"))
+  } 
+  
+  predictions <- posterior_predict(fit_boundaries, nsamples = 100, newdata = data_to_predict)
+  predictions_df <- data_to_predict %>% cbind(as.data.frame(t(predictions))) %>% 
+    gather("sample","NYHA", V1:V100) 
+  
+  if(adherence) {
+    predictions_df <- predictions_df %>% mutate(group = factor(paste(sample,Adherence)))
+    aesthetics <- aes(x = VO2max, y = NYHA, group = group, color = Adherence)
+  } else {
+    predictions_df <- predictions_df %>% mutate(group = sample)
+    aesthetics <- aes(x = VO2max, y = NYHA, group = group)
+  }
+  
+  predictions_df %>%
+    ggplot(aesthetics) +
+    stat_smooth(method = "loess", geom = "line", alpha = 0.2, se = FALSE) + 
+    scale_x_continuous(minor_breaks = NYHA_VO2max_breaks) +
+    scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
+    expand_limits(y = exp_limits) +
+    theme(panel.grid.minor = element_line(colour = "lightgray")) +
+    guides(color = guide_legend(override.aes = list(alpha = 1)))
+}
+
+plot_fitted_trend(fit_boundaries)
+```
+
+
+```{r}
+params <-  extract_draws(fit_boundaries)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$dpars$mu$cs$Intercept
+threshold_samples <- array(-Inf, c(params$nsamples, 3))
+for(i in 1:3) {
+  threshold_samples[,i] <- threshold_raw[,i] / b
+}
+threshold_samples[threshold_samples < 0] <- 0
+predicted_thresholds <- tibble(`NYHA 1` = threshold_samples[,1], `NYHA 2` = threshold_samples[,2], `NYHA 3` = threshold_samples[,3])
+true_thresholds <- tibble(NYHA = paste("NYHA",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()
+
+
+```
+
+```{r}
+fit_adherence <- brm(NYHA_subj ~ VO2max + mo(Adherence), family = cumulative("logit"), data = data_brms, file = here("stored_fits","adherence.rds"))
+fit_adherence
+```
+```{r}
+plot_fitted_trend(fit_adherence, TRUE)
+```
+
+
+```{r}
+fit_adherence_int <- brm(NYHA_subj ~ VO2max * mo(Adherence), family = cumulative("logit"), data = data_brms, file = here("stored_fits","adherence_int.rds"))
+fit_adherence_int
+
+```
+
+```{r}
+plot_fitted_trend(fit_adherence_int, TRUE)
+```
+
