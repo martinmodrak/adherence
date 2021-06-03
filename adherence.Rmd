@@ -1,0 +1,290 @@
+---
+title: "Adherence"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+library(UpSetR)
+```
+
+```{r}
+data_raw <- read_excel(here::here("private_data", "Adherence LEVEL-CHF 2020.xlsx"), sheet = "Seznam pacientů", range = "A2:DM130")
+
+column_map <- c("Číslo pacienta" = "subject_id",
+              "Investigátor" = "investigator",
+              "Pohlaví (1 - muž, 0 - žena)" = "sex",
+              "Datum narození" = "birth_date",
+              "Věk (v celých rocích)" = "age",
+              "Datum kontroly" = "examination_date",
+              "Váha" = "weight",
+              "Výška" = "height",
+              "BMI" = "BMI",
+              "EKG frekvence" = "ekg_freq",
+              "Pulz" = "pulse",
+              "Systolický tlak" = "systolic_BP",
+              "Diastolický tlak" = "diastolic_BP",
+              "Funkční třída (NYHA)" = "NYHA",
+              "EF na aktuální kontrole (%)" = "EF",
+              "První EFLK v ambulanci pro srdeční selhání" = "EF_first_amublance",
+              "Úplně původní EFLK (%) při prvním kontaktu s nemocnicí" = "EF_firts_contact",
+              "Počet léků celkově (tabletek)" = "number_of_pills",
+              "Diabetik?" = "diabetes",
+              "Diagnóza selhání" = "diagnosis",
+              "NYHA při spiroergometrii subjektivně (nejbližší kontrola v srd. selhání potom)" = "NYHA_spiro_subj",
+              "NYHA při spiroergometrii objektivně" = "NYHA_spiro_obj",
+              "VO2 max" = "VO2_max",
+              "Datum spiroergometrie" = "spiro_date",
+              "M1 (1/0)" = "questionnaire_1",
+              "M2 (1/0)" = "questionnaire_2",
+              "M3 (1/0)" = "questionnaire_3",
+              "M4 (1/0)" = "questionnaire_4",
+              "Na" = "lab_Na",
+              "K" = "lab_K",
+              "Cl" = "lab_Cl",
+              "U"  = "lab_U",
+              "Kr" = "lab_Kr",
+              "Glykémie" = "lab_glycaemia",
+              "NT-proBNP" = "lab_NT_proBNP",
+              "HbA1C" = "lab_HbA1c",
+              "GFR" = "lab_GFR",
+              "Doba od podání léků" = "time_since_dose",
+            # "Ivabradin (0/1)" = "has.ivabradin",
+            # "dávka" = "dose.ivabradin",
+              "Má ACE?" = "has.ACE",
+              "Jaký ACE?" = "which.ACE",
+              "Dávka...44" = "dose.ACE",
+              "Ramipril hladina" = "level.ACE.ramipril",
+              "Ramiprilát hladina" = "level.ACE.ramiprilate",
+              "Perindopril hladina" = "level.ACE.perinidopril",
+              "Perindoprilát hladina" = "level.ACE.perinidoprilate",
+              "Trandolapril hladina" = "level.ACE.trandolapril",
+              "Trandolaprilát hladina" = "level.ACE.trandolaprilate",
+              "Adherentní k ACE? (1 - ano, 2 - ne, 0 - nemá ACE, 3 - neměřitelný ACE)" = "adherent.ACE",
+              "Má sartan?" = "has.sartan",
+              "Jaký sartan?" = "which.sartan",
+              "Dávka...54" = "dose.sartan",
+              "Telmisartan hladina" = "level.sartan.telmisartan",
+              "Candesartan hladina" = "level.sartan.candesartan",
+              "Losartan hladina" = "level.sartan.losartan",
+              "Losartan M hladina" = "level.sartan.losartan_M",
+              "Valsartan hladina" = "level.sartan.valsartan",
+              "Adherentní k sartanu? (0 - nemá, 1 - ano, 2 - ne, 3 - neměřitelný sartan)" = "adherent.sartan",
+              "Má ARNI?" = "has.ARNI",
+              "Dávka ARNI" = "dose.ARNI",
+              "Hladina sakubitrilu" = "level.ARNI.sakubitril",
+              "Hladina sakubtril M" = "level.ARNI.sakubitril_M",
+              "Hladina valsartanu (z ARNI)" = "level.ARNI.valsartan",
+              "Adherentní k ARNI?" = "adherent.ARNI",
+              "Má furosemid?" = "has.furosemide",
+              "Furosemid dávka" = "dose.furosemide",
+              "Furosemid hladina" = "level.furosemide.furosemide",
+              "Adherentní k furosemidu?" = "adherent.furosemide",
+              "Má MRA? (1 - ano, 0 - ne)" = "has.MRA",
+              "Jaký MRA?" = "which.MRA",
+              "Dávka...73" = "dose.MRA",
+              "Spironolakton hladina" = "level.MRA.spironolakton",
+              "Eplerenon hladina" = "level.MRA.eplerenon",
+              "Adherentní k MRA? (0 - nemá, 1 - ano, 2 - ne, 3 - neměřitelný MRA)" = "adherent.MRA",
+              "Má BB?" = "has.BB",
+              "Jaký BB?" = "which.BB",
+              "Dávka...79" = "dose.BB",
+              "Metoprolol hladina" = "level.BB.metoprolol",
+              "Bisoprolol hladina" = "level.BB.bisoprolol",
+              "Carvedilol hladina" = "level.BB.carvedilol",
+              "Nebivolol hladina" = "level.BB.nebivolol",
+              "Adherentní k BB?" = "adherent.BB",
+              "Má Ca blokátor?" = "has.CaB",
+              "Jaký CaB" = "which.CaB",
+              "Dávka CaB" = "dose.CaB",
+              "Nitrendipin hladina" = "level.CaB.nitrendipin",
+              "Amlodipin hladina" = "level.CaB.amlodipin",
+              "Lercanidipin hladina" = "level.CaB.lercanidipin",
+              "Adherentní k CaB?" = "adherent.CaB",
+              "Má diuretikum? (mimo furosemid a MRA)" = "has.other_diuretics",
+              "Dávka indapamidu" = "dose.indapamide",
+              "Indapamid hladina" = "level.indapamide.indapamide",
+              "Dávka amiloridu" = "dose.amilorid",
+              "Amilorid hladina" = "level.amilorid.amilorid",
+              "Dávka HCTZ" = "dose.HCTZ",
+              "HCHTZ hladina" = "level.HCTZ.HCTZ",
+              "Dávka chlortalidonu" = "dose.chlorthalidone",
+              "Chlorthalidon hladina" = "level.chlorthalidone.chlorthalidone",
+              "Adherentní k diuretikům?" = "adherent.other_diuretics",
+              "Má statin?" = "has.statin",
+              "Jaký statin?" = "which.statin",
+              "Dávka statinu" = "dose.statin",
+              "Atorvastatin hladina" = "level.statin.atorvastatin",
+              "Rosuvastatin hladina" = "level.statin.rosuvastatin",
+              "Adherentní ke statinu?" = "adherent.statin",
+              "Má alfa-blokátor?" = "has.alpha_blocker",
+              "Jaký alfa-blokátor?" = "which.alpha_blocker",
+              "Dávka alfa-blokátoru" = "dose.alpha_blocker",
+              "Doxazosyn haldina" = "level.alpha_blocker.doxazosyn",
+              "Adherentní k alfa-blokátoru?" = "adherent.alpha_blocker",
+              "Má digoxin?" = "has.digoxin",
+              "Dávka digoxinu" = "dose.digoxin",
+              "Hladina digoxinu" = "level.digoxin.digoxin",
+              "Adherentní k digoxinu?" = "adherent.digoxin")
+
+data_wide <- data_raw %>% select(all_of(names(column_map)))
+names(data_wide) <- column_map[names(data_wide)]
+data_wide <- data_wide %>%
+  mutate(across(starts_with("has."), as.integer))
+
+if(length(unique(data_wide$subject_id)) != nrow(data_wide)) {
+  stop("Repeated subjects")
+}
+```
+
+
+
+```{r}
+data_upset <- data_wide %>% 
+  select(subject_id, starts_with("has."))
+names(data_upset) <- gsub("^has.", "", names(data_upset))
+  
+upset(as.data.frame(data_upset), sets = names(data_upset)[2:ncol(data_upset)], order.by = "freq", nintersects = NA, nsets = 10)
+```
+
+```{r}
+spec_level <- build_longer_spec(data_wide, cols = starts_with("level."), names_prefix = "level.",
+                  names_to = c("drug_class", "measured_product"), names_sep = "\\.", values_to = "level")
+
+spec_has <- build_longer_spec(data_wide, cols = starts_with("has."), names_prefix = "has.",
+                  names_to = c("drug_class"), values_to = "has")
+
+
+spec_adherent <- build_longer_spec(data_wide, cols = starts_with("adherent."), names_prefix = "adherent.",
+                  names_to = c("drug_class"), values_to = "adherent")
+
+spec_dose <- build_longer_spec(data_wide, cols = starts_with("dose."), names_prefix = "dose.",
+                  names_to = c("drug_class"), values_to = "dose")
+
+
+drug_class_product <- spec_level %>% select(drug_class, measured_product)
+
+
+spec_joint <- 
+  rbind(spec_level,
+        rbind(spec_has,
+              spec_adherent,
+              spec_dose)  %>% inner_join(drug_class_product, by = "drug_class")
+        )
+
+data_long_raw <- data_wide  %>%
+  select(-starts_with("which")) %>%
+  mutate(across(c(starts_with("level."), starts_with("dose")), as.character)) %>%
+  pivot_longer_spec(spec_joint)
+
+
+```
+
+```{r}
+unrecognized_levels <- data_long_raw %>% select(subject_id, drug_class, level) %>%
+  filter(!is.na(level), !grepl("^(<|>|>>)?[0-9]+([.,][0-9]*)?(E[+\\-][0-9]+)?$", level), !(level %in% c("neměřena", "neprokázán", "stopa")))
+
+if(nrow(unrecognized_levels) > 0) {
+  print(unrecognized_levels)
+  stop("Unrecognized levels")
+}
+
+
+```
+
+Following subjects have discrepancy between the "Má XX" column and measured levels:
+
+```{r}
+data_long_raw %>% select(subject_id, drug_class, level, has) %>%
+  group_by(subject_id, drug_class, has) %>%
+  summarise(has_from_levels = any(!is.na(level)), .groups = "drop") %>%
+  filter(has != has_from_levels)
+```
+
+```{r}
+inconsistent_long <-  data_long_raw %>% group_by(subject_id, drug_class) %>%
+  filter(length(unique(has)) > 1 | length(unique(adherent)) > 1) 
+
+if(nrow(inconsistent_long) > 0) {
+  stop("Inconsistent long")
+}
+
+data_long_for_checks <- data_long_raw %>%
+  mutate(adherent_manual = factor(adherent, levels = c(0,1,2,3), labels = c("not_using", "yes", "no", "cannot_measure")),
+         adherent.other_diuretics_manual  = factor(adherent.other_diuretics, levels = c(0,1,2,3), labels = c("not_using", "yes", "no", "cannot_measure")), 
+         level_measured = !is.na(level) & level != "neměřena",
+         detected = level_measured & !(grepl("^<", level) | level == "0" | level == "neprokázán")) %>%
+  group_by(subject_id, drug_class) %>%
+  mutate(has = any(!is.na(level)),
+         adherent = case_when(!unique(has) ~ "not_using",
+                              any(detected) ~ "yes",
+                              all(!level_measured) ~ "cannot_measure",
+                              TRUE ~ "no"
+                              )) %>%
+  ungroup()
+
+data_long_for_checks %>% 
+  select(subject_id, drug_class, adherent, adherent_manual) %>%
+  filter(adherent_manual != adherent) %>%  distinct()
+```
+```{r}
+other_diuretics <- c("indapamide", "amilorid", "HCTZ", "chlorthalidone")
+
+inconsistent_has_diuretics <-  data_long_for_checks %>%
+  filter(drug_class %in% other_diuretics) %>%
+  group_by(subject_id) %>%
+  filter(has.other_diuretics != any(!is.na(level)))
+         
+if(nrow(inconsistent_has_diuretics) > 0) {
+  stop("Inconsistent has diuretics")
+}
+         
+         
+adherent_diuretics_mismatch <- data_long_for_checks %>%
+  filter(drug_class %in% other_diuretics) %>%
+  group_by(subject_id) %>%
+  mutate(adherent.other_diuretics = case_when(
+    any(adherent == "no") ~ "no",
+    all(adherent == "not_using") ~ "not_using",
+    any(adherent == "yes") ~ "yes",
+    TRUE ~ "cannot_measure"
+  )) %>%
+  filter(adherent.other_diuretics != adherent.other_diuretics_manual) %>%
+  select(subject_id, adherent.other_diuretics, adherent.other_diuretics_manual) %>% distinct()
+  
+if(nrow(adherent_diuretics_mismatch)) {
+  print(adherent_diuretics_mismatch)
+  stop("Mismatch")
+}
+
+```
+
+```{r}
+data_long <- data_long_for_checks %>%
+  mutate(
+    drug_class = if_else(drug_class %in% other_diuretics, "other_diuretics", drug_class),
+    adherent = if_else(drug_class == "other_diuretics", as.character(adherent.other_diuretics), adherent),
+    has = if_else(drug_class == "other_diuretics", as.logical(has.other_diuretics), has)
+    ) %>%
+  select(-has.other_diuretics, -adherent.other_diuretics, -adherent.other_diuretics_manual, -adherent_manual)
+  
+inconsistent_long <-  data_long %>% group_by(subject_id, drug_class) %>%
+  filter(length(unique(has)) > 1 | length(unique(adherent)) > 1)
+
+if(nrow(inconsistent_long) > 0) {
+  stop("Inconsistent")
+}
+
+data_long <- data_long %>%
+  select(-dose, -level, -measured_product, -level_measured, -detected) %>%
+  distinct()
+
+
+if(nrow(data_long) != nrow(data_wide) * length(unique(data_long$drug_class))) {
+  stop("Bad restructuring")
+}
+
+data_long %>% select(subject_id, drug_class)
+```
+
