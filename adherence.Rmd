@@ -272,7 +272,9 @@ ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(
 ```{r}
 data_aggregate <- data_long %>% filter(has) %>%
   group_by_at(vars(- all_of(c("drug_class", "has", "adherent", "drug_superclass", "adherent_int")))) %>%
-  summarise(N_drugs = sum(has), N_adherent = sum(adherent_int), .groups = "drop")
+  summarise(N_drugs = sum(has), N_adherent = sum(adherent_int), 
+            prop = N_adherent / N_drugs,
+            .groups = "drop")
 
 if(nrow(data_aggregate) != nrow(data_wide)) {
   stop("Bad processing")
@@ -289,6 +291,25 @@ fit_test <- brm(N_adherent | vint(N_drugs) ~ 1, data = data_aggregate, family = 
 
 summary(fit_test)
 ```
+
+```{r}
+preds <- posterior_predict(fit_test)
+preds_prop <- sweep(preds, MARGIN = 2, STATS = data_aggregate$N_drugs, FUN = "/")
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex)
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex, stat = sd)
+
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4))
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4, stat = sd))
+
+
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA)
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA, stat = sd)
+
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1))
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = replace_na(data_aggregate$EF, "NA"), stat = sd)
+
+```
+
 
 
 VO2 max, NYHA, EF, NT-proBNP
