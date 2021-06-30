@@ -14,7 +14,7 @@ stan_funs <- "
   }
 "
 
-stanvars <- stanvar(scode = stan_funs, block = "functions")
+stanvars_beta_binomial2 <- stanvar(scode = stan_funs, block = "functions")
 
 
 #modified to not require rstan

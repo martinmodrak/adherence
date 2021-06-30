@@ -15,8 +15,8 @@ if(!dir.exists(cache_dir)) {
   dir.create(cache_dir)
 }
 
+devtools::load_all()
 
-source(here::here("load_data.R"), encoding = "UTF-8")
 all_data <- load_data_adherence1()
 data_wide <- all_data$wide
 data_long <- all_data$long
@@ -104,6 +104,22 @@ data_long %>%
   summarise(n())
 ```
 
+Same as above, but excluding furosemide
+
+```{r}
+data_long %>%
+  filter(has, drug_class != "furosemide") %>%
+  group_by(subject_id) %>%
+  summarise(N_adherent = sum(adherent_int), N_drugs = sum(has),
+            category = case_when(N_adherent == 0 ~ "A - none",
+                                 N_adherent == N_drugs ~ "E - all",
+                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                                 N_adherent == N_drugs - 1 ~ "D - all but one",
+                                 TRUE ~ "C - in between"
+                                 )) %>%
+  group_by(category) %>%
+  summarise(n())
+```
 
 ## Adherence by various factors
 
@@ -252,6 +268,28 @@ ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(
 
 
 ## Bad health
+
+```{r}
+data_aggregate <- data_long %>% filter(has) %>%
+  group_by_at(vars(- all_of(c("drug_class", "has", "adherent", "drug_superclass", "adherent_int")))) %>%
+  summarise(N_drugs = sum(has), N_adherent = sum(adherent_int), .groups = "drop")
+
+if(nrow(data_aggregate) != nrow(data_wide)) {
+  stop("Bad processing")
+}
+
+if(!identical(sort(unique(data_aggregate$subject_id)), sort(unique(data_wide$subject_id)))) {
+  stop("Bad processing")
+}
+```
+
+
+```{r}
+fit_test <- brm(N_adherent | vint(N_drugs) ~ 1, data = data_aggregate, family = beta_binomial2, stanvars = stanvars_beta_binomial2, refresh = 500)
+
+summary(fit_test)
+```
+
 
 VO2 max, NYHA, EF, NT-proBNP
 
