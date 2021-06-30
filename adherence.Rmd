@@ -7,137 +7,36 @@ output: html_notebook
 library(tidyverse)
 library(readxl)
 library(UpSetR)
+library(brms)
+library(bayesplot)
+options(mc.cores = 4, brms.backend = "cmdstanr")
+cache_dir <- here::here("stored_fits")
+if(!dir.exists(cache_dir)) {
+  dir.create(cache_dir)
+}
+
+
+source(here::here("load_data.R"), encoding = "UTF-8")
+all_data <- load_data_adherence1()
+data_wide <- all_data$wide
+data_long <- all_data$long
+```
+
+Following subjects have discrepancy between the "Má XX" column and measured levels:
+
+```{r}
+all_data$long_raw %>% select(subject_id, drug_class, level, has) %>%
+  group_by(subject_id, drug_class, has) %>%
+  summarise(has_from_levels = any(!is.na(level)), .groups = "drop") %>%
+  filter(has != has_from_levels)
 ```
 
 ```{r}
-data_raw <- read_excel(here::here("private_data", "Adherence LEVEL-CHF 2020.xlsx"), sheet = "Seznam pacientů", range = "A2:DM130")
+all_data$long_for_checks %>% 
+    select(subject_id, drug_class, adherent, adherent_manual) %>%
+    filter(adherent_manual != adherent) %>%  distinct()  
 
-column_map <- c("Číslo pacienta" = "subject_id",
-              "Investigátor" = "investigator",
-              "Pohlaví (1 - muž, 0 - žena)" = "sex",
-              "Datum narození" = "birth_date",
-              "Věk (v celých rocích)" = "age",
-              "Datum kontroly" = "examination_date",
-              "Váha" = "weight",
-              "Výška" = "height",
-              "BMI" = "BMI",
-              "EKG frekvence" = "ekg_freq",
-              "Pulz" = "pulse",
-              "Systolický tlak" = "systolic_BP",
-              "Diastolický tlak" = "diastolic_BP",
-              "Funkční třída (NYHA)" = "NYHA",
-              "EF na aktuální kontrole (%)" = "EF",
-              "První EFLK v ambulanci pro srdeční selhání" = "EF_first_amublance",
-              "Úplně původní EFLK (%) při prvním kontaktu s nemocnicí" = "EF_firts_contact",
-              "Počet léků celkově (tabletek)" = "number_of_pills",
-              "Diabetik?" = "diabetes",
-              "Diagnóza selhání" = "diagnosis",
-              "NYHA při spiroergometrii subjektivně (nejbližší kontrola v srd. selhání potom)" = "NYHA_spiro_subj",
-              "NYHA při spiroergometrii objektivně" = "NYHA_spiro_obj",
-              "VO2 max" = "VO2_max",
-              "Datum spiroergometrie" = "spiro_date",
-              "M1 (1/0)" = "questionnaire_1",
-              "M2 (1/0)" = "questionnaire_2",
-              "M3 (1/0)" = "questionnaire_3",
-              "M4 (1/0)" = "questionnaire_4",
-              "Na" = "lab_Na",
-              "K" = "lab_K",
-              "Cl" = "lab_Cl",
-              "U"  = "lab_U",
-              "Kr" = "lab_Kr",
-              "Glykémie" = "lab_glycaemia",
-              "NT-proBNP" = "lab_NT_proBNP",
-              "HbA1C" = "lab_HbA1c",
-              "GFR" = "lab_GFR",
-              "Doba od podání léků" = "time_since_dose",
-            # "Ivabradin (0/1)" = "has.ivabradin",
-            # "dávka" = "dose.ivabradin",
-              "Má ACE?" = "has.ACE",
-              "Jaký ACE?" = "which.ACE",
-              "Dávka...44" = "dose.ACE",
-              "Ramipril hladina" = "level.ACE.ramipril",
-              "Ramiprilát hladina" = "level.ACE.ramiprilate",
-              "Perindopril hladina" = "level.ACE.perinidopril",
-              "Perindoprilát hladina" = "level.ACE.perinidoprilate",
-              "Trandolapril hladina" = "level.ACE.trandolapril",
-              "Trandolaprilát hladina" = "level.ACE.trandolaprilate",
-              "Adherentní k ACE? (1 - ano, 2 - ne, 0 - nemá ACE, 3 - neměřitelný ACE)" = "adherent.ACE",
-              "Má sartan?" = "has.sartan",
-              "Jaký sartan?" = "which.sartan",
-              "Dávka...54" = "dose.sartan",
-              "Telmisartan hladina" = "level.sartan.telmisartan",
-              "Candesartan hladina" = "level.sartan.candesartan",
-              "Losartan hladina" = "level.sartan.losartan",
-              "Losartan M hladina" = "level.sartan.losartan_M",
-              "Valsartan hladina" = "level.sartan.valsartan",
-              "Adherentní k sartanu? (0 - nemá, 1 - ano, 2 - ne, 3 - neměřitelný sartan)" = "adherent.sartan",
-              "Má ARNI?" = "has.ARNI",
-              "Dávka ARNI" = "dose.ARNI",
-              "Hladina sakubitrilu" = "level.ARNI.sakubitril",
-              "Hladina sakubtril M" = "level.ARNI.sakubitril_M",
-              "Hladina valsartanu (z ARNI)" = "level.ARNI.valsartan",
-              "Adherentní k ARNI?" = "adherent.ARNI",
-              "Má furosemid?" = "has.furosemide",
-              "Furosemid dávka" = "dose.furosemide",
-              "Furosemid hladina" = "level.furosemide.furosemide",
-              "Adherentní k furosemidu?" = "adherent.furosemide",
-              "Má MRA? (1 - ano, 0 - ne)" = "has.MRA",
-              "Jaký MRA?" = "which.MRA",
-              "Dávka...73" = "dose.MRA",
-              "Spironolakton hladina" = "level.MRA.spironolakton",
-              "Eplerenon hladina" = "level.MRA.eplerenon",
-              "Adherentní k MRA? (0 - nemá, 1 - ano, 2 - ne, 3 - neměřitelný MRA)" = "adherent.MRA",
-              "Má BB?" = "has.BB",
-              "Jaký BB?" = "which.BB",
-              "Dávka...79" = "dose.BB",
-              "Metoprolol hladina" = "level.BB.metoprolol",
-              "Bisoprolol hladina" = "level.BB.bisoprolol",
-              "Carvedilol hladina" = "level.BB.carvedilol",
-              "Nebivolol hladina" = "level.BB.nebivolol",
-              "Adherentní k BB?" = "adherent.BB",
-              "Má Ca blokátor?" = "has.CaB",
-              "Jaký CaB" = "which.CaB",
-              "Dávka CaB" = "dose.CaB",
-              "Nitrendipin hladina" = "level.CaB.nitrendipin",
-              "Amlodipin hladina" = "level.CaB.amlodipin",
-              "Lercanidipin hladina" = "level.CaB.lercanidipin",
-              "Adherentní k CaB?" = "adherent.CaB",
-              "Má diuretikum? (mimo furosemid a MRA)" = "has.other_diuretics",
-              "Dávka indapamidu" = "dose.indapamide",
-              "Indapamid hladina" = "level.indapamide.indapamide",
-              "Dávka amiloridu" = "dose.amilorid",
-              "Amilorid hladina" = "level.amilorid.amilorid",
-              "Dávka HCTZ" = "dose.HCTZ",
-              "HCHTZ hladina" = "level.HCTZ.HCTZ",
-              "Dávka chlortalidonu" = "dose.chlorthalidone",
-              "Chlorthalidon hladina" = "level.chlorthalidone.chlorthalidone",
-              "Adherentní k diuretikům?" = "adherent.other_diuretics",
-              "Má statin?" = "has.statin",
-              "Jaký statin?" = "which.statin",
-              "Dávka statinu" = "dose.statin",
-              "Atorvastatin hladina" = "level.statin.atorvastatin",
-              "Rosuvastatin hladina" = "level.statin.rosuvastatin",
-              "Adherentní ke statinu?" = "adherent.statin",
-              "Má alfa-blokátor?" = "has.alpha_blocker",
-              "Jaký alfa-blokátor?" = "which.alpha_blocker",
-              "Dávka alfa-blokátoru" = "dose.alpha_blocker",
-              "Doxazosyn haldina" = "level.alpha_blocker.doxazosyn",
-              "Adherentní k alfa-blokátoru?" = "adherent.alpha_blocker",
-              "Má digoxin?" = "has.digoxin",
-              "Dávka digoxinu" = "dose.digoxin",
-              "Hladina digoxinu" = "level.digoxin.digoxin",
-              "Adherentní k digoxinu?" = "adherent.digoxin")
-
-data_wide <- data_raw %>% select(all_of(names(column_map)))
-names(data_wide) <- column_map[names(data_wide)]
-data_wide <- data_wide %>%
-  mutate(across(starts_with("has."), as.integer))
-
-if(length(unique(data_wide$subject_id)) != nrow(data_wide)) {
-  stop("Repeated subjects")
-}
 ```
-
 
 
 ```{r}
@@ -148,143 +47,239 @@ names(data_upset) <- gsub("^has.", "", names(data_upset))
 upset(as.data.frame(data_upset), sets = names(data_upset)[2:ncol(data_upset)], order.by = "freq", nintersects = NA, nsets = 10)
 ```
 
+# Exploratory plots
+
 ```{r}
-spec_level <- build_longer_spec(data_wide, cols = starts_with("level."), names_prefix = "level.",
-                  names_to = c("drug_class", "measured_product"), names_sep = "\\.", values_to = "level")
-
-spec_has <- build_longer_spec(data_wide, cols = starts_with("has."), names_prefix = "has.",
-                  names_to = c("drug_class"), values_to = "has")
-
-
-spec_adherent <- build_longer_spec(data_wide, cols = starts_with("adherent."), names_prefix = "adherent.",
-                  names_to = c("drug_class"), values_to = "adherent")
-
-spec_dose <- build_longer_spec(data_wide, cols = starts_with("dose."), names_prefix = "dose.",
-                  names_to = c("drug_class"), values_to = "dose")
-
-
-drug_class_product <- spec_level %>% select(drug_class, measured_product)
-
-
-spec_joint <- 
-  rbind(spec_level,
-        rbind(spec_has,
-              spec_adherent,
-              spec_dose)  %>% inner_join(drug_class_product, by = "drug_class")
-        )
-
-data_long_raw <- data_wide  %>%
-  select(-starts_with("which")) %>%
-  mutate(across(c(starts_with("level."), starts_with("dose")), as.character)) %>%
-  pivot_longer_spec(spec_joint)
-
-
+data_long %>% filter(has) %>% group_by(drug_class) %>%
+  summarise(yes = sum(adherent == "yes"), no = sum(adherent == "no"),
+            proportion = yes / (yes + no), 
+            low95 = qbeta(0.025, yes + 1, no + 1),
+            high95 = qbeta(0.975, yes + 1, no + 1),
+            total = yes + no) %>%
+  ggplot(aes(x = drug_class, y = proportion, ymin = low95, ymax = high95, label = total)) + 
+    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.1) + expand_limits(y = 1.1)
 ```
 
 ```{r}
-unrecognized_levels <- data_long_raw %>% select(subject_id, drug_class, level) %>%
-  filter(!is.na(level), !grepl("^(<|>|>>)?[0-9]+([.,][0-9]*)?(E[+\\-][0-9]+)?$", level), !(level %in% c("neměřena", "neprokázán", "stopa")))
-
-if(nrow(unrecognized_levels) > 0) {
-  print(unrecognized_levels)
-  stop("Unrecognized levels")
-}
-
-
-```
-
-Following subjects have discrepancy between the "Má XX" column and measured levels:
-
-```{r}
-data_long_raw %>% select(subject_id, drug_class, level, has) %>%
-  group_by(subject_id, drug_class, has) %>%
-  summarise(has_from_levels = any(!is.na(level)), .groups = "drop") %>%
-  filter(has != has_from_levels)
-```
-
-```{r}
-inconsistent_long <-  data_long_raw %>% group_by(subject_id, drug_class) %>%
-  filter(length(unique(has)) > 1 | length(unique(adherent)) > 1) 
-
-if(nrow(inconsistent_long) > 0) {
-  stop("Inconsistent long")
-}
-
-data_long_for_checks <- data_long_raw %>%
-  mutate(adherent_manual = factor(adherent, levels = c(0,1,2,3), labels = c("not_using", "yes", "no", "cannot_measure")),
-         adherent.other_diuretics_manual  = factor(adherent.other_diuretics, levels = c(0,1,2,3), labels = c("not_using", "yes", "no", "cannot_measure")), 
-         level_measured = !is.na(level) & level != "neměřena",
-         detected = level_measured & !(grepl("^<", level) | level == "0" | level == "neprokázán")) %>%
-  group_by(subject_id, drug_class) %>%
-  mutate(has = any(!is.na(level)),
-         adherent = case_when(!unique(has) ~ "not_using",
-                              any(detected) ~ "yes",
-                              all(!level_measured) ~ "cannot_measure",
-                              TRUE ~ "no"
-                              )) %>%
-  ungroup()
-
-data_long_for_checks %>% 
-  select(subject_id, drug_class, adherent, adherent_manual) %>%
-  filter(adherent_manual != adherent) %>%  distinct()
-```
-```{r}
-other_diuretics <- c("indapamide", "amilorid", "HCTZ", "chlorthalidone")
-
-inconsistent_has_diuretics <-  data_long_for_checks %>%
-  filter(drug_class %in% other_diuretics) %>%
+N_drugs_per_subject <- data_long %>%
+  filter(has) %>%
   group_by(subject_id) %>%
-  filter(has.other_diuretics != any(!is.na(level)))
-         
-if(nrow(inconsistent_has_diuretics) > 0) {
-  stop("Inconsistent has diuretics")
-}
-         
-         
-adherent_diuretics_mismatch <- data_long_for_checks %>%
-  filter(drug_class %in% other_diuretics) %>%
-  group_by(subject_id) %>%
-  mutate(adherent.other_diuretics = case_when(
-    any(adherent == "no") ~ "no",
-    all(adherent == "not_using") ~ "not_using",
-    any(adherent == "yes") ~ "yes",
-    TRUE ~ "cannot_measure"
-  )) %>%
-  filter(adherent.other_diuretics != adherent.other_diuretics_manual) %>%
-  select(subject_id, adherent.other_diuretics, adherent.other_diuretics_manual) %>% distinct()
-  
-if(nrow(adherent_diuretics_mismatch)) {
-  print(adherent_diuretics_mismatch)
-  stop("Mismatch")
-}
+  summarise(N_adherent = sum(adherent_int), N_drugs = sum(has)) %>%
+  group_by(N_drugs, N_adherent) %>%
+  summarise(count = n())
 
+crossing(N_adherent = 0:max(N_drugs_per_subject$N_drugs), N_drugs = 1:max(N_drugs_per_subject$N_drugs)) %>% 
+  filter(N_adherent <= N_drugs) %>%
+  left_join(N_drugs_per_subject) %>%
+  group_by(N_drugs) %>%
+  mutate(count = replace_na(count, 0), total = sum(count)) %>%
+  group_by(N_drugs, N_adherent, count) %>%
+  summarise(
+    proportion = count / total, 
+            low95 = qbeta(0.025, count + 1, total - count + 1),
+            high95 = qbeta(0.975, count + 1, total - count + 1)) %>%
+  ggplot(aes(x = N_adherent, y = count)) + 
+    geom_line() +
+    geom_point(size = 2) +
+    facet_wrap(~N_drugs, scales = "free_y", labeller = label_both)
+  # ggplot(aes(x = N_adherent, y = proportion, ymin = low95, ymax = high95, label = count)) + 
+  #   geom_linerange() + geom_point(size = 2) + geom_label(y = 1.1) + expand_limits(y = 1.1) +
+  #   facet_wrap(~N_drugs)
+  
+  
 ```
 
 ```{r}
-data_long <- data_long_for_checks %>%
-  mutate(
-    drug_class = if_else(drug_class %in% other_diuretics, "other_diuretics", drug_class),
-    adherent = if_else(drug_class == "other_diuretics", as.character(adherent.other_diuretics), adherent),
-    has = if_else(drug_class == "other_diuretics", as.logical(has.other_diuretics), has)
-    ) %>%
-  select(-has.other_diuretics, -adherent.other_diuretics, -adherent.other_diuretics_manual, -adherent_manual)
-  
-inconsistent_long <-  data_long %>% group_by(subject_id, drug_class) %>%
-  filter(length(unique(has)) > 1 | length(unique(adherent)) > 1)
+data_long %>%
+  filter(has) %>%
+  group_by(subject_id) %>%
+  summarise(N_adherent = sum(adherent_int), N_drugs = sum(has),
+            category = case_when(N_adherent == 0 ~ "A - none",
+                                 N_adherent == N_drugs ~ "E - all",
+                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                                 N_adherent == N_drugs - 1 ~ "D - all but one",
+                                 TRUE ~ "C - in between"
+                                 )) %>%
+  group_by(category) %>%
+  summarise(n())
+```
 
-if(nrow(inconsistent_long) > 0) {
-  stop("Inconsistent")
+
+## Adherence by various factors
+
+```{r}
+plot_adherence_by_continuous <- function(data_long, by_val) {
+  data_long %>%
+    filter(has) %>%
+    group_by(drug_class) %>%
+    filter(any(adherent_int == 0)) %>%
+    ggplot(aes(y = adherent_int, x = {{by_val}})) + stat_smooth(method = "glm", method.args=list(family="binomial"), formula = y ~ x) + geom_point(position = position_jitter(height = 0.1)) + facet_wrap(~drug_class)
 }
 
-data_long <- data_long %>%
-  select(-dose, -level, -measured_product, -level_measured, -detected) %>%
-  distinct()
 
-
-if(nrow(data_long) != nrow(data_wide) * length(unique(data_long$drug_class))) {
-  stop("Bad restructuring")
+plot_adherence_by_discrete <- function(data_long, by_val) {
+  data_long %>%
+    filter(has, !is.na({{by_val}})) %>%
+    group_by(drug_class) %>%
+    filter(any(adherent_int == 0)) %>%
+    mutate({{by_val}} := as_factor({{by_val}})) %>%
+    group_by(drug_class, {{by_val}}) %>%
+    summarise(yes = sum(adherent == "yes"), no = sum(adherent == "no"),
+            proportion = yes / (yes + no), 
+            low95 = qbeta(0.025, yes + 1, no + 1),
+            high95 = qbeta(0.975, yes + 1, no + 1),
+            total = yes + no, .groups = "drop") %>%
+  ggplot(aes(x = {{by_val}}, y = proportion, ymin = low95, ymax = high95, label = total)) + 
+    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.2, size = 3) + expand_limits(y = 1.25) +
+    facet_wrap(~drug_class)
 }
 
-data_long %>% select(subject_id, drug_class)
+
+plot_adherence_by_continuous(data_long, age)
+plot_adherence_by_discrete(data_long, sex)
+plot_adherence_by_continuous(data_long, BMI)
+plot_adherence_by_discrete(data_long, NYHA)
+plot_adherence_by_continuous(data_long, systolic_BP)
+plot_adherence_by_continuous(data_long, diastolic_BP)
+plot_adherence_by_continuous(data_long, EF_numeric)
+plot_adherence_by_continuous(data_long, pmin(EF_first_amublance_numeric, EF_first_contact_numeric))
+plot_adherence_by_continuous(data_long, ekg_freq)
+plot_adherence_by_continuous(data_long, lab_Na)
+plot_adherence_by_continuous(data_long, lab_Cl)
+plot_adherence_by_continuous(data_long, log(lab_U))
+plot_adherence_by_continuous(data_long, lab_K)
+plot_adherence_by_continuous(data_long, log(lab_Kr))
+plot_adherence_by_continuous(data_long, log(lab_NT_proBNP))
+plot_adherence_by_continuous(data_long, lab_GFR) + geom_vline(color = "red", xintercept = 1.55)
+
+
+```
+```{r}
+
+```
+
+
+```{r}
+#unique(data_long$VO2_max)
+plot_adherence_by_continuous(data_long, as.numeric(VO2_max))
+
+```
+
+## Drugs and their expected metabolic effect
+
+```{r}
+data_long %>% filter(drug_class == "BB") %>%
+  ggplot(aes(x = adherent, y = ekg_freq)) + geom_boxplot() + geom_point(position = position_jitter(width = 0.3))
+```
+
+## Adherence questionnaire
+
+The questionnaire was:
+
+- Q1: Have you ever forgotten to take your heart failure medication. Orig: "Zapomněl jste si někdy vzít léky na srdeční selhání?"
+- Q2: Do you dutifully use your heart failure medication? Orig: "Jste pečlivý v užívání léků na srdeční selhání?"
+- Q3: When you feel well, do you sometimes skip your heart failure medication? Orig: "Když se cítíte dobře, vysadíte si někdy léky na srdeční selhání?"
+- Q4: Do you sometimes skip your heart failure medication when you feel unwell? Orig: "Někdy, když se cítíte špatně, vysadíte si léky na srdeční selhání?"
+
+```{r}
+
+
+plot_adherence_by_discrete(data_long, questionnaire_1) 
+plot_adherence_by_discrete(data_long, questionnaire_2)
+plot_adherence_by_discrete(data_long, questionnaire_3)
+plot_adherence_by_discrete(data_long, questionnaire_4)
+plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - questionnaire_2 + questionnaire_3 + as.numeric(questionnaire_4) ), q_total)
+
+```
+
+
+
+
+
+# Modelling
+
+```{r}
+data_for_model1 <- data_long %>% filter(has) 
+
+if(any(is.na(data_for_model1$adherent_int))) {
+  stop("NAs")
+}
+priors1 <- prior(normal(0,2), class = "sd")
+fit1 <- brm(adherent_int ~ (1 | drug_class) + (1 | subject_id), family = "bernoulli", data = data_for_model1, prior = priors1, 
+            file = paste0(cache_dir, "/fit1"), file_refit = "on_change", refresh = 500)
+
+summary(fit1)
+ranef(fit1)$drug_class
+```
+
+
+
+```{r}
+preds <- posterior_predict(fit1)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, data_for_model1$drug_class), freq = FALSE)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA, freq = FALSE)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"), freq = FALSE)
+
+```
+
+
+TODO:
+plot observed adherence vs. fit1 predicted adherence
+
+```{r}
+fit_simple <- brm(adherent_int ~ (1 | drug_class), family = "bernoulli", data = data_for_model1, prior = priors1, 
+            file = paste0(cache_dir, "/fit_simple"), file_refit = "on_change", refresh = 500)
+
+summary(fit_simple)
+ranef(fit_simple)$drug_class
+```
+
+```{r}
+preds <- posterior_predict(fit_simple)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA)
+ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"))
+
+```
+
+
+
+## Bad health
+
+VO2 max, NYHA, EF, NT-proBNP
+
+```{r}
+data_for_model1 %>% group_by(EF) %>% summarise(n())
+data_wide %>% select(EF, VO2_max, NYHA, lab_NT_proBNP) %>% mutate(EF = as.integer(factor(EF)) + runif(n(), -0.1,0.1), NYHA = as.integer(factor(NYHA))  + runif(n(), -0.1,0.1), lab_NT_proBNP = log(lab_NT_proBNP)) %>% as.matrix() %>% pairs()
+```
+
+```{r}
+
+```
+
+
+```{r}
+data_for_model1 %>% group_by(subject_id) %>%
+  summarise(prop_adherent = sum(adherent_int) /  n()) %>%
+  group_by(prop_adherent) %>%
+  summarise(n())
+```
+
+
+```{r}
+bad_health_formula <- bf(
+  adherent_int ~ (1 | drug_class) + badhealth,
+  badhealth ~ (1 | subject_id),
+  family = bernoulli(), nl = TRUE) #+
+  #bf(NYHA ~ badhealth, family = cumulative())
+
+make_stancode(bad_health_formula, data = data_for_model1)
 ```
 
