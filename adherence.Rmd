@@ -8,6 +8,7 @@ library(tidyverse)
 library(readxl)
 library(UpSetR)
 library(brms)
+library(cmdstanr)
 library(bayesplot)
 options(mc.cores = 4, brms.backend = "cmdstanr")
 cache_dir <- here::here("stored_fits")
@@ -331,14 +332,58 @@ data_for_model1 %>% group_by(subject_id) %>%
   summarise(n())
 ```
 
+```{r}
+mod_badhealth <- cmdstan_model("badhealth.stan")
+```
+```{r}
+subject_id_map <- 1:length(unique(data_for_model1$subject_id))
+names(subject_id_map) <- unique(data_for_model1$subject_id)
+
+patient_data <- data_for_model1 %>% select(subject_id,
+                                           NYHA,
+                                           VO2_max,
+                                           EF,
+                                           lab_NT_proBNP) %>%
+  distinct() %>%
+  mutate(subject_id_model = subject_id_map[as.character(subject_id)],
+         NYHA = factor(NYHA),
+         EF = factor(EF)) %>%
+  arrange(subject_id_model)
+
+data_badhealth <- list(
+  N = nrow(data_for_model1),
+  adherent = data_for_model1$adherent_int,
+  N_subjects = length(subject_id_map),
+  subject = subject_id_map[as.character(data_for_model1$subject_id)],
+  N_NYHA = length(levels(patient_data$NYHA)),
+  NYHA = patient_data$NYHA,
+  VO2_max_missing = is.na(patient_data$VO2_max),
+  VO2_max = replace_na(patient_data$VO2_max, 0),
+  NT_proBNP = patient_data$lab_NT_proBNP,
+  N_EF = length(levels(patient_data$EF)),
+  EF_missing = is.na(patient_data$EF),
+  EF = replace_na(as.integer(patient_data$EF), 0)
+  
+)
+ 
+fit_badhealth <- mod_badhealth$sample(data = data_badhealth)
+  
+```
+
 
 ```{r}
 bad_health_formula <- bf(
-  adherent_int ~ (1 | drug_class) + badhealth,
+  adherent_int ~ base + badhealth,
+  base ~ 1 + (1 | drug_class),
   badhealth ~ (1 | subject_id),
-  family = bernoulli(), nl = TRUE) #+
-  #bf(NYHA ~ badhealth, family = cumulative())
+  NYHA ~ badhealth,
+  family = bernoulli(), nl = TRUE) 
 
 make_stancode(bad_health_formula, data = data_for_model1)
+```
+
+```{r}
+shinystan::launch_shinystan(rstan::read_stan_csv(fit_badhealth$output_files()))
+
 ```
 

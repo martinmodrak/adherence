@@ -1,5 +1,5 @@
 #Beta-binomial code from https://cran.r-project.org/web/packages/brms/vignettes/brms_customfamilies.html
-beta_binomial2 <- custom_family(
+beta_binomial2 <- brms::custom_family(
   "beta_binomial2", dpars = c("mu", "phi"),
   links = c("logit", "log"), lb = c(NA, 0),
   type = "int", vars = "vint1[n]"
@@ -14,7 +14,7 @@ stan_funs <- "
   }
 "
 
-stanvars_beta_binomial2 <- stanvar(scode = stan_funs, block = "functions")
+stanvars_beta_binomial2 <- brms::stanvar(scode = stan_funs, block = "functions")
 
 
 #modified to not require rstan

@@ -39,3 +39,5 @@ private_data/
 stored_fits/
 *.nb.html
 .Rproj.user
+
+*.exe
