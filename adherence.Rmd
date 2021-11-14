@@ -16,6 +16,8 @@ if(!dir.exists(cache_dir)) {
   dir.create(cache_dir)
 }
 
+run_pp_checks <- TRUE
+
 devtools::load_all()
 
 all_data <- load_data_adherence1()
@@ -267,9 +269,6 @@ ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(
 ```
 
 
-
-## Bad health
-
 ```{r}
 data_aggregate <- data_long %>% filter(has) %>%
   group_by_at(vars(- all_of(c("drug_class", "has", "adherent", "drug_superclass", "adherent_int")))) %>%
@@ -288,28 +287,31 @@ if(!identical(sort(unique(data_aggregate$subject_id)), sort(unique(data_wide$sub
 
 
 ```{r}
-fit_test <- brm(N_adherent | vint(N_drugs) ~ 1, data = data_aggregate, family = beta_binomial2, stanvars = stanvars_beta_binomial2, refresh = 500)
+fit_aggregate_simple <- brm(N_adherent | vint(N_drugs) ~ 1, data = data_aggregate, family = beta_binomial2, stanvars = stanvars_beta_binomial2, refresh = 500, file = paste0(cache_dir, "/fit_aggregate_simple"), file_refit = "on_change")
 
-summary(fit_test)
+summary(fit_aggregate_simple)
 ```
 
 ```{r}
-preds <- posterior_predict(fit_test)
+preds <- posterior_predict(fit_aggregate_simple)
 preds_prop <- sweep(preds, MARGIN = 2, STATS = data_aggregate$N_drugs, FUN = "/")
 ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex)
 ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex, stat = sd)
 
 ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4))
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4, stat = sd))
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4), stat = sd)
 
 
 ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA)
 ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA, stat = sd)
 
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1))
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = replace_na(data_aggregate$EF, "NA"), stat = sd)
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1)) + ggtitle("EF/10")
+ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1), stat = sd)  + ggtitle("EF/10")
 
 ```
+
+
+## Bad health
 
 
 
@@ -321,11 +323,6 @@ data_wide %>% select(EF, VO2_max, NYHA, lab_NT_proBNP) %>% mutate(EF = as.intege
 ```
 
 ```{r}
-
-```
-
-
-```{r}
 data_for_model1 %>% group_by(subject_id) %>%
   summarise(prop_adherent = sum(adherent_int) /  n()) %>%
   group_by(prop_adherent) %>%
@@ -335,7 +332,7 @@ data_for_model1 %>% group_by(subject_id) %>%
 ```{r}
 mod_badhealth <- cmdstan_model("badhealth.stan")
 ```
-```{r}
+```{r, results = 'hide'}
 subject_id_map <- 1:length(unique(data_for_model1$subject_id))
 names(subject_id_map) <- unique(data_for_model1$subject_id)
 
@@ -353,6 +350,8 @@ patient_data <- data_for_model1 %>% select(subject_id,
 data_badhealth <- list(
   N = nrow(data_for_model1),
   adherent = data_for_model1$adherent_int,
+  N_classes = length(unique(data_for_model1$drug_class)),
+  classes = factor(data_for_model1$drug_class),
   N_subjects = length(subject_id_map),
   subject = subject_id_map[as.character(data_for_model1$subject_id)],
   N_NYHA = length(levels(patient_data$NYHA)),
@@ -365,25 +364,82 @@ data_badhealth <- list(
   EF = replace_na(as.integer(patient_data$EF), 0)
   
 )
- 
-fit_badhealth <- mod_badhealth$sample(data = data_badhealth)
+
+cache_file <- file.path(cache_dir, paste0("fit_badhealth_", rlang::hash(data_badhealth), "_", rlang::hash(mod_badhealth$code())))
+if(file.exists(cache_file)) {
+  fit_badhealth <- readRDS(cache_file)
+} else {
+  fit_badhealth <- mod_badhealth$sample(data = data_badhealth, refresh = 500)
+  fit_badhealth$save_output_files(dir = cache_dir)
+}
   
 ```
 
+```{r}
+fit_badhealth$summary(variables = c("badhealth_slope", "nyha_thres", "VO2_max_intercept", "VO2_max_slope","VO2_max_sd",  "NT_proBNP_intercept",
+                                    "NT_proBNP_slope", "NT_proBNP_sd", "EF_thres"))
+
+worst_health_model_ids <- fit_badhealth$summary(variables = "badhealth") %>% arrange(desc(q5)) %>% slice_head(n = 5) %>% pull(variable) %>%
+  gsub("badhealth\\[|\\]", "", .)
+worst_health_subject_ids <- names(subject_id_map[subject_id_map %in% worst_health_model_ids])
+```
+
 
 ```{r}
-bad_health_formula <- bf(
-  adherent_int ~ base + badhealth,
-  base ~ 1 + (1 | drug_class),
-  badhealth ~ (1 | subject_id),
-  NYHA ~ badhealth,
-  family = bernoulli(), nl = TRUE) 
+badhealth_rvars <- posterior::as_draws_rvars(fit_badhealth$draws())
+linpred_adherent <- badhealth_rvars$adherent_intercept + badhealth_rvars$class_intercept[data_badhealth$classes] + 
+  badhealth_rvars$badhealth_slope * badhealth_rvars$badhealth[data_badhealth$subject] 
 
-make_stancode(bad_health_formula, data = data_for_model1)
+epred_adherent <- posterior::rdo(plogis(linpred_adherent))
+
+pred_adherent <- posterior::draws_of(posterior::rvar_rng(rbinom, n = data_badhealth$N, prob = epred_adherent, size = 1))
 ```
 
 ```{r}
-shinystan::launch_shinystan(rstan::read_stan_csv(fit_badhealth$output_files()))
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$sex)
 
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(data_for_model1$age, 4))
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$NYHA)
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(as.character(cut(data_for_model1$VO2_max, 4)), "NA"))
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(log(data_for_model1$lab_NT_proBNP), 4))
+
+
+
+ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(substr( data_for_model1$EF,1, 1), "NA")) + ggtitle("EF/10")
 ```
+```{r}
+linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_rvars$NT_proBNP_slope * badhealth_rvars$badhealth
+pred_NT_proBNP <- posterior::draws_of(posterior::rvar_rng(rlnorm, n = data_badhealth$N_subjects,  linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
+
+ppc_dens_overlay(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]))
+ppc_dens_overlay_grouped(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]), group = fct_collapse(patient_data$NYHA, "3-4" = c("3", "3-4")))
+```
+```{r}
+badhealth_noised <- posterior::rvar_rng(rlogis, n = data_badhealth$N_subjects, location = badhealth_rvars$badhealth)
+pred_NYHA <- 1
+for(i in 1:dim(badhealth_rvars$nyha_thres)) {
+  pred_NYHA <- pred_NYHA + (badhealth_noised > badhealth_rvars$nyha_thres[i])
+}
+
+pred_NYHA <- posterior::draws_of(pred_NYHA)
+obs_NYHA <- as.integer(data_badhealth$NYHA)
+
+ppc_bars(obs_NYHA, pred_NYHA)
+ppc_bars_grouped(obs_NYHA, pred_NYHA, group = cut(log(patient_data$lab_NT_proBNP), 4))
+```
+
+```{r}
+pred_EF <- 1
+for(i in 1:dim(badhealth_rvars$EF_thres)) {
+  pred_EF <- pred_EF + (badhealth_noised > badhealth_rvars$EF_thres[i])
+}
+
+obs_EF <- as.integer(data_badhealth$EF)
+pred_EF <- posterior::draws_of(pred_EF)[,!data_badhealth$EF_missing]
+obs_EF <- obs_EF[!data_badhealth$EF_missing]
+
+ppc_bars(obs_EF, pred_EF)
+ppc_bars_grouped(obs_EF, pred_EF, group = cut(log(patient_data$lab_NT_proBNP[!data_badhealth$EF_missing]), 3))
+```
+
 

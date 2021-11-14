@@ -3,6 +3,8 @@ data {
   int<lower=0,upper=1> adherent[N];
   int<lower=2> N_subjects;
   int<lower=1, upper=N_subjects> subject[N];
+  int<lower=2> N_classes;
+  int<lower=1, upper=N_classes> classes[N];
 
   int<lower=2> N_NYHA;
   int<lower=0, upper=N_NYHA> NYHA[N_subjects];
@@ -16,19 +18,14 @@ data {
 
 }
 
-transformed data {
-  int N_NYHA_thres_low = (N_NYHA - 2) %/% 2;
-  int N_NYHA_thres_high = N_NYHA - 2 - N_NYHA_thres_low;
-}
-
 parameters {
   real adherent_intercept;
-  real badhealth_slope;
-  vector[N_subjects] badhealth;
+  vector[N_classes] class_intercept_raw;
+  real<lower=0> class_intercept_sd;
 
-  //Separate into low and high and force 0 as one of the thresholds
-  positive_ordered[N_NYHA_thres_low] nyha_thres_low;
-  positive_ordered[N_NYHA_thres_high] nyha_thres_high;
+  real badhealth_slope;
+
+  ordered[N_NYHA - 1] nyha_thres;
 
   real VO2_max_intercept;
   real VO2_max_slope;
@@ -39,20 +36,22 @@ parameters {
   real<lower=0> NT_proBNP_sd;
 
   ordered[N_EF - 1] EF_thres;
+
+  vector[N_subjects] badhealth;
+
 }
 
+
 transformed parameters {
-  ordered[N_NYHA - 1] nyha_thres =
-    append_row(
-      append_row(- reverse(nyha_thres_low), to_vector([0])),
-    nyha_thres_high);
+  vector[N_classes] class_intercept = class_intercept_raw * class_intercept_sd;
 }
 
 model {
   adherent_intercept ~ normal(0, 3);
+  class_intercept_raw ~ std_normal();
+  class_intercept_sd ~ normal(0, 2);
   badhealth ~ normal(0, 1);
-  nyha_thres_low ~ normal(0, 2);
-  nyha_thres_high ~ normal(0, 2);
+  nyha_thres ~ normal(0, 2);
   VO2_max_intercept ~ normal(log(10), 1);
   VO2_max_slope ~ normal(0, 1);
   VO2_max_sd ~ normal(0, 1);
@@ -61,7 +60,7 @@ model {
   NT_proBNP_sd ~ normal(0, 1);
   EF_thres ~ normal(0, 2);
 
-  adherent ~ bernoulli_logit(adherent_intercept + badhealth_slope * badhealth[subject]);
+  adherent ~ bernoulli_logit(adherent_intercept + class_intercept[classes] + badhealth_slope * badhealth[subject]);
   NYHA ~ ordered_logistic(badhealth, nyha_thres);
   NT_proBNP ~ lognormal(NT_proBNP_intercept + NT_proBNP_slope * badhealth, NT_proBNP_sd);
   for(s in 1:N_subjects) {
