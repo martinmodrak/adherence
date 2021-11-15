@@ -16,6 +16,8 @@ if(!dir.exists(cache_dir)) {
   dir.create(cache_dir)
 }
 
+theme_set(cowplot::theme_cowplot())
+
 run_pp_checks <- TRUE
 
 devtools::load_all()
@@ -161,14 +163,14 @@ plot_adherence_by_discrete(data_long, NYHA)
 plot_adherence_by_continuous(data_long, systolic_BP)
 plot_adherence_by_continuous(data_long, diastolic_BP)
 plot_adherence_by_continuous(data_long, EF_numeric)
-plot_adherence_by_continuous(data_long, pmin(EF_first_amublance_numeric, EF_first_contact_numeric))
+plot_adherence_by_continuous(data_long, pmin(EF_first_amublance_numeric, EF_first_contact_numeric)) + scale_x_continuous("Worst EF ambulance/contact")
 plot_adherence_by_continuous(data_long, ekg_freq)
 plot_adherence_by_continuous(data_long, lab_Na)
 plot_adherence_by_continuous(data_long, lab_Cl)
-plot_adherence_by_continuous(data_long, log(lab_U))
+plot_adherence_by_continuous(data_long, lab_U) + scale_x_log10()
 plot_adherence_by_continuous(data_long, lab_K)
-plot_adherence_by_continuous(data_long, log(lab_Kr))
-plot_adherence_by_continuous(data_long, log(lab_NT_proBNP))
+plot_adherence_by_continuous(data_long, lab_Kr)  + scale_x_log10()
+plot_adherence_by_continuous(data_long, lab_NT_proBNP) + scale_x_log10()
 plot_adherence_by_continuous(data_long, lab_GFR) + geom_vline(color = "red", xintercept = 1.55)
 
 
@@ -186,10 +188,53 @@ plot_adherence_by_continuous(data_long, as.numeric(VO2_max))
 
 ## Drugs and their expected metabolic effect
 
+Beta blockers should reduce EKG, pulse. Indeed a mild reduction is visible.
+
 ```{r}
-data_long %>% filter(drug_class == "BB") %>%
-  ggplot(aes(x = adherent, y = ekg_freq)) + geom_boxplot() + geom_point(position = position_jitter(width = 0.3))
+plot_continuous_by_class_adherence <- function(data_long, drug_classes, value, 
+                                               value_title = NULL) {
+  if(is.null(value_title)) {
+    value_title <- rlang::as_name(rlang::enquo(value))
+  }
+  data_long %>% filter(drug_class %in% drug_classes, !is.na({{value}})) %>%
+    ggplot(aes(x = adherent, y = {{value}})) + geom_boxplot() + geom_point(position = position_jitter(width = 0.25), alpha = 0.5) + 
+    scale_y_continuous(value_title) +
+    facet_wrap(~drug_class)
+    #scale_x_discrete(paste0("Adherent to ", drug_class))
+}
+
+
+plot_continuous_by_class_adherence(data_long, "BB", ekg_freq, "EKG frequency")
+plot_continuous_by_class_adherence(data_long, "BB", pulse)
+
+
 ```
+MRA, ACEi, Sartans and ARNI should increas potassium levels - we see this quite strongly with ARNI, although minor increases are also seen MRA and ACEi. For sartan, we do not observe this (potentially due to very low sample size).
+
+```{r}
+plot_continuous_by_class_adherence(data_long, c("MRA", "ACEi", "sartan", "ARNI"), lab_K, "Potassium")
+
+```
+Furosemide and other diuretics should decrease potassium, but wo do not observe this for furosemide and have no non-adherent diuretics patient that didn't have .
+
+```{r}
+plot_continuous_by_class_adherence(data_long, c("furosemide","other_diuretics"), lab_K, "Potassium")
+```
+
+All except statins and digoxine should reduce blood pressure, which we mostly observe:
+
+```{r}
+all_bp_lowering <- c("ACEi","sartan","ARNI","furosemide","MRA","BB", "CaB", "other_diuretics")
+plot_continuous_by_class_adherence(data_long, all_bp_lowering, 
+                                   systolic_BP)
+plot_continuous_by_class_adherence(data_long, all_bp_lowering, 
+                                   diastolic_BP)
+
+```
+```{r}
+
+```
+
 
 ## Adherence questionnaire
 
@@ -200,6 +245,8 @@ The questionnaire was:
 - Q3: When you feel well, do you sometimes skip your heart failure medication? Orig: "Když se cítíte dobře, vysadíte si někdy léky na srdeční selhání?"
 - Q4: Do you sometimes skip your heart failure medication when you feel unwell? Orig: "Někdy, když se cítíte špatně, vysadíte si léky na srdeční selhání?"
 
+First lets plot the answers per question:
+
 ```{r}
 
 
@@ -207,11 +254,14 @@ plot_adherence_by_discrete(data_long, questionnaire_1)
 plot_adherence_by_discrete(data_long, questionnaire_2)
 plot_adherence_by_discrete(data_long, questionnaire_3)
 plot_adherence_by_discrete(data_long, questionnaire_4)
-plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - questionnaire_2 + questionnaire_3 + as.numeric(questionnaire_4) ), q_total)
 
 ```
 
 
+```{r}
+plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - questionnaire_2 + questionnaire_3 + as.numeric(questionnaire_4) ), q_total)
+
+```
 
 
 
@@ -407,6 +457,7 @@ ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(log(data_fo
 
 ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(substr( data_for_model1$EF,1, 1), "NA")) + ggtitle("EF/10")
 ```
+
 ```{r}
 linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_rvars$NT_proBNP_slope * badhealth_rvars$badhealth
 pred_NT_proBNP <- posterior::draws_of(posterior::rvar_rng(rlnorm, n = data_badhealth$N_subjects,  linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
@@ -441,5 +492,7 @@ obs_EF <- obs_EF[!data_badhealth$EF_missing]
 ppc_bars(obs_EF, pred_EF)
 ppc_bars_grouped(obs_EF, pred_EF, group = cut(log(patient_data$lab_NT_proBNP[!data_badhealth$EF_missing]), 3))
 ```
+
+## Adherence questionnaire
 
 

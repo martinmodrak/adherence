@@ -7,7 +7,7 @@ column_map <- {
 
 other_diuretics <- c("indapamide", "amilorid", "HCTZ", "chlorthalidone")
 
-main_targets <- c("ACE", "ARNI", "sartan", "MRA", "BB")
+main_targets <- c("ACEi", "ARNI", "sartan", "MRA", "BB")
 
 
 nyha_from_excel_dates <- function(nyha_dates){
