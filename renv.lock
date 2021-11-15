@@ -5,6 +5,10 @@
       {
         "Name": "CRAN",
         "URL": "https://cran.rstudio.com"
+      },
+      {
+        "Name": "STAN",
+        "URL": "https://mc-stan.org/r-packages/"
       }
     ]
   },
@@ -95,9 +99,9 @@
     },
     "StanHeaders": {
       "Package": "StanHeaders",
-      "Version": "2.26.1",
+      "Version": "2.26.4",
       "Source": "Repository",
-      "Repository": "CRAN",
+      "Repository": "STAN",
       "Hash": "ab5801a309a108b091f321719f7a7487"
     },
     "UpSetR": {
@@ -1113,7 +1117,7 @@
       "Package": "rstan",
       "Version": "2.26.1",
       "Source": "Repository",
-      "Repository": "CRAN",
+      "Repository": "STAN",
       "Hash": "db523572d4a85fc727d8b8c2cd497e39"
     },
     "rstantools": {
