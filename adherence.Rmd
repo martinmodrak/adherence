@@ -1,16 +1,21 @@
 ---
 title: "Adherence"
-output: html_notebook
+output: html_document
 ---
 
-```{r setup}
+```{r setup, message=FALSE, echo = FALSE, results='hide', warning = FALSE}
 library(tidyverse)
 library(readxl)
 library(UpSetR)
 library(brms)
 library(cmdstanr)
 library(bayesplot)
-options(mc.cores = 4, brms.backend = "cmdstanr")
+library(tidybayes)
+library(ggdist)
+
+knitr::opts_chunk$set(echo=FALSE)
+
+options(mc.cores = 4, brms.backend = "cmdstanr", dplyr.summarise.inform = FALSE)
 cache_dir <- here::here("stored_fits")
 if(!dir.exists(cache_dir)) {
   dir.create(cache_dir)
@@ -18,7 +23,7 @@ if(!dir.exists(cache_dir)) {
 
 theme_set(cowplot::theme_cowplot())
 
-run_pp_checks <- TRUE
+run_pp_checks <- FALSE
 
 devtools::load_all()
 
@@ -44,6 +49,12 @@ all_data$long_for_checks %>%
 ```
 
 
+
+
+# Exploratory plots
+
+First let's look at the drug combinations in use:
+
 ```{r}
 data_upset <- data_wide %>% 
   select(subject_id, starts_with("has."))
@@ -52,7 +63,7 @@ names(data_upset) <- gsub("^has.", "", names(data_upset))
 upset(as.data.frame(data_upset), sets = names(data_upset)[2:ncol(data_upset)], order.by = "freq", nintersects = NA, nsets = 10)
 ```
 
-# Exploratory plots
+And the overall adherence associated with each drug class (observed proportion - point, 95% credible interval - line, number of users - label):
 
 ```{r}
 data_long %>% filter(has) %>% group_by(drug_class) %>%
@@ -62,8 +73,11 @@ data_long %>% filter(has) %>% group_by(drug_class) %>%
             high95 = qbeta(0.975, yes + 1, no + 1),
             total = yes + no) %>%
   ggplot(aes(x = drug_class, y = proportion, ymin = low95, ymax = high95, label = total)) + 
-    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.1) + expand_limits(y = 1.1)
+    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.1) + expand_limits(y = 1.1) + scale_y_continuous("Proportion adherent") + scale_x_discrete("Drug class") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust= 1))
 ```
+
+Below is the number of drugs patients are adherent to (horizontal axis) split by the total number of drugs used (subplots)
 
 ```{r}
 N_drugs_per_subject <- data_long %>%
@@ -75,7 +89,7 @@ N_drugs_per_subject <- data_long %>%
 
 crossing(N_adherent = 0:max(N_drugs_per_subject$N_drugs), N_drugs = 1:max(N_drugs_per_subject$N_drugs)) %>% 
   filter(N_adherent <= N_drugs) %>%
-  left_join(N_drugs_per_subject) %>%
+  left_join(N_drugs_per_subject,  by = c("N_adherent", "N_drugs")) %>%
   group_by(N_drugs) %>%
   mutate(count = replace_na(count, 0), total = sum(count)) %>%
   group_by(N_drugs, N_adherent, count) %>%
@@ -93,6 +107,8 @@ crossing(N_adherent = 0:max(N_drugs_per_subject$N_drugs), N_drugs = 1:max(N_drug
   
   
 ```
+
+Or to summarise into five adherence categories:
 
 ```{r}
 data_long %>%
@@ -126,6 +142,8 @@ data_long %>%
   summarise(n())
 ```
 
+I.e. most people are adherent to all their medications and very few are non-adherent to multiple medications.
+
 ## Adherence by various factors
 
 ```{r}
@@ -134,7 +152,10 @@ plot_adherence_by_continuous <- function(data_long, by_val) {
     filter(has) %>%
     group_by(drug_class) %>%
     filter(any(adherent_int == 0)) %>%
-    ggplot(aes(y = adherent_int, x = {{by_val}})) + stat_smooth(method = "glm", method.args=list(family="binomial"), formula = y ~ x) + geom_point(position = position_jitter(height = 0.1)) + facet_wrap(~drug_class)
+    ggplot(aes(y = adherent_int, x = {{by_val}})) + stat_smooth(method = "glm", method.args=list(family="binomial"), formula = y ~ x) + geom_point(position = position_jitter(height = 0.1)) + 
+    scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
+                       breaks = c(0,0.5,1)) +
+    facet_wrap(~drug_class)
 }
 
 
@@ -151,13 +172,32 @@ plot_adherence_by_discrete <- function(data_long, by_val) {
             high95 = qbeta(0.975, yes + 1, no + 1),
             total = yes + no, .groups = "drop") %>%
   ggplot(aes(x = {{by_val}}, y = proportion, ymin = low95, ymax = high95, label = total)) + 
-    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.2, size = 3) + expand_limits(y = 1.25) +
+    geom_linerange() + geom_point(size = 2) + geom_label(y = 1.2, size = 3) + expand_limits(y = c(0, 1.25)) +
+    scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
+                       breaks = c(0,0.5,1)) +
     facet_wrap(~drug_class)
 }
+```
 
+For continuous measures, we display the measure (here age) on the horizontal axis. Each dot is then a single patient using the drug (either adherent or non-adherent).
+The blue line then represents a logistic regression fit with it's associated confidence interval (gray band).
 
+```{r}
 plot_adherence_by_continuous(data_long, age)
+```
+
+For discrete variables, we show for each category the average adherence (point) and
+the associated 95% CI (line). The total number of patients taking the drug falling into each category is shown in the numerical label.
+
+```{r}
 plot_adherence_by_discrete(data_long, sex)
+```
+
+A bunch of plots for various variables follow:
+
+```{r}
+
+
 plot_adherence_by_continuous(data_long, BMI)
 plot_adherence_by_discrete(data_long, NYHA)
 plot_adherence_by_continuous(data_long, systolic_BP)
@@ -172,11 +212,6 @@ plot_adherence_by_continuous(data_long, lab_K)
 plot_adherence_by_continuous(data_long, lab_Kr)  + scale_x_log10()
 plot_adherence_by_continuous(data_long, lab_NT_proBNP) + scale_x_log10()
 plot_adherence_by_continuous(data_long, lab_GFR) + geom_vline(color = "red", xintercept = 1.55)
-
-
-```
-```{r}
-
 ```
 
 
@@ -209,12 +244,15 @@ plot_continuous_by_class_adherence(data_long, "BB", pulse)
 
 
 ```
+
 MRA, ACEi, Sartans and ARNI should increas potassium levels - we see this quite strongly with ARNI, although minor increases are also seen MRA and ACEi. For sartan, we do not observe this (potentially due to very low sample size).
 
 ```{r}
 plot_continuous_by_class_adherence(data_long, c("MRA", "ACEi", "sartan", "ARNI"), lab_K, "Potassium")
 
 ```
+
+
 Furosemide and other diuretics should decrease potassium, but wo do not observe this for furosemide and have no non-adherent diuretics patient that didn't have .
 
 ```{r}
@@ -231,9 +269,7 @@ plot_continuous_by_class_adherence(data_long, all_bp_lowering,
                                    diastolic_BP)
 
 ```
-```{r}
 
-```
 
 
 ## Adherence questionnaire
@@ -245,27 +281,43 @@ The questionnaire was:
 - Q3: When you feel well, do you sometimes skip your heart failure medication? Orig: "Když se cítíte dobře, vysadíte si někdy léky na srdeční selhání?"
 - Q4: Do you sometimes skip your heart failure medication when you feel unwell? Orig: "Někdy, když se cítíte špatně, vysadíte si léky na srdeční selhání?"
 
-First lets plot the answers per question:
+So in summary affirmitive answer to Q1, Q3 and Q4 should mean less adherence while
+affirmitive answer to Q2 should mean more adherence.
+
+
+Let's plot the answers per question:
+
+
+For Q1 we see a relatively big portion of affirmitive answers, those however don't appear to be associated with any strong decrease in adherence.
+
 
 ```{r}
-
-
 plot_adherence_by_discrete(data_long, questionnaire_1) 
-plot_adherence_by_discrete(data_long, questionnaire_2)
-plot_adherence_by_discrete(data_long, questionnaire_3)
-plot_adherence_by_discrete(data_long, questionnaire_4)
-
 ```
 
+Q2 appears to be of very limited usefulness as almost all patients respond in the affirmitive. For the drug classes where we have a bit more negative answers (MRA, BB) we see some trend towards more adherence for affirmitive responses, but it is not very convincing.
 
 ```{r}
-plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - questionnaire_2 + questionnaire_3 + as.numeric(questionnaire_4) ), q_total)
+plot_adherence_by_discrete(data_long, questionnaire_2)
+```
+
+Questionnaire 3 and 4 are even less useful as only one patient responded in the affirmitive for Q3 and only two for Q4 and thus there is really nothing much to be learned. 
+
+Finally, we can try to combine all the questions into a composite score (coding Q2 as negative, others as positive), so that increased score should mean less adherence. Once again there does not appear to be much going on in the composite score.
+
+```{r}
+plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - questionnaire_2 + questionnaire_3 + replace_na(questionnaire_4, 0)), q_total)
 
 ```
 
 
 
 # Modelling
+
+## Adherence by factors
+
+It turns out that a model incorporating the drug class and some between-subject variability is about as much as we can reliably get from the data and so
+we cannot work very usefully with individual factors (but see the Bad Health section below)
 
 ```{r}
 data_for_model1 <- data_long %>% filter(has) 
@@ -284,15 +336,16 @@ ranef(fit1)$drug_class
 
 
 ```{r}
-preds <- posterior_predict(fit1)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, data_for_model1$drug_class), freq = FALSE)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA, freq = FALSE)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"), freq = FALSE)
-
+if(run_pp_checks) {
+  preds <- posterior_predict(fit1)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, data_for_model1$drug_class), freq = FALSE)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA, freq = FALSE)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"), freq = FALSE)
+}
 ```
 
 
@@ -308,14 +361,15 @@ ranef(fit_simple)$drug_class
 ```
 
 ```{r}
-preds <- posterior_predict(fit_simple)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA)
-ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"))
-
+if(run_pp_checks) {
+  preds <- posterior_predict(fit_simple)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$drug_class)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$sex)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = cut(data_for_model1$age, 4))
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = interaction(data_for_model1$sex, cut(data_for_model1$age, 4)))
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA)
+  ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"))
+}
 ```
 
 
@@ -343,45 +397,50 @@ summary(fit_aggregate_simple)
 ```
 
 ```{r}
-preds <- posterior_predict(fit_aggregate_simple)
-preds_prop <- sweep(preds, MARGIN = 2, STATS = data_aggregate$N_drugs, FUN = "/")
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex)
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex, stat = sd)
-
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4))
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4), stat = sd)
-
-
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA)
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA, stat = sd)
-
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1)) + ggtitle("EF/10")
-ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1), stat = sd)  + ggtitle("EF/10")
-
+if(run_pp_checks) {
+  preds <- posterior_predict(fit_aggregate_simple)
+  preds_prop <- sweep(preds, MARGIN = 2, STATS = data_aggregate$N_drugs, FUN = "/")
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex)
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$sex, stat = sd)
+  
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4))
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = cut(data_aggregate$age, 4), stat = sd)
+  
+  
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA)
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = data_aggregate$NYHA, stat = sd)
+  
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1)) + ggtitle("EF/10")
+  ppc_stat_grouped(data_aggregate$prop, preds_prop, group = substr( replace_na(data_aggregate$EF, "NA"),1, 1), stat = sd)  + ggtitle("EF/10")
+}
 ```
 
 
 ## Bad health
 
+For the bad health model, we assume that both adherence and some clinical values (
+VO2 max, NYHA, EF, NT-proBNP) are affected by the same construct of "bad health" - which is a one-dimensional quantity per subject. I.e. we don't expect a direct effect of say VO2 max on adherence, rather that VO2 max, NYHA, EF, NT-proBNP and adherence share the same unobserved causal factor.
 
-
-VO2 max, NYHA, EF, NT-proBNP
+Here is how the 4 clinical parameters correlate:
 
 ```{r}
-data_for_model1 %>% group_by(EF) %>% summarise(n())
+#data_for_model1 %>% group_by(EF) %>% summarise(n())
 data_wide %>% select(EF, VO2_max, NYHA, lab_NT_proBNP) %>% mutate(EF = as.integer(factor(EF)) + runif(n(), -0.1,0.1), NYHA = as.integer(factor(NYHA))  + runif(n(), -0.1,0.1), lab_NT_proBNP = log(lab_NT_proBNP)) %>% as.matrix() %>% pairs()
 ```
 
 ```{r}
-data_for_model1 %>% group_by(subject_id) %>%
-  summarise(prop_adherent = sum(adherent_int) /  n()) %>%
-  group_by(prop_adherent) %>%
-  summarise(n())
+# data_for_model1 %>% group_by(subject_id) %>%
+#   summarise(prop_adherent = sum(adherent_int) /  n()) %>%
+#   group_by(prop_adherent) %>%
+#   summarise(n())
 ```
+
+We can now fit the model
 
 ```{r}
 mod_badhealth <- cmdstan_model("badhealth.stan")
 ```
+
 ```{r, results = 'hide'}
 subject_id_map <- 1:length(unique(data_for_model1$subject_id))
 names(subject_id_map) <- unique(data_for_model1$subject_id)
@@ -421,78 +480,171 @@ if(file.exists(cache_file)) {
 } else {
   fit_badhealth <- mod_badhealth$sample(data = data_badhealth, refresh = 500)
   fit_badhealth$save_output_files(dir = cache_dir)
+  saveRDS(fit_badhealth, file = cache_file)
 }
   
 ```
 
-```{r}
-fit_badhealth$summary(variables = c("badhealth_slope", "nyha_thres", "VO2_max_intercept", "VO2_max_slope","VO2_max_sd",  "NT_proBNP_intercept",
-                                    "NT_proBNP_slope", "NT_proBNP_sd", "EF_thres"))
+Summarising the most important aspect of the fits:
 
+```{r}
+fit_badhealth$summary(variables = c("badhealth_slope", "nyha_thres", "VO2_max_slope", "NT_proBNP_slope", "EF_thres")) %>% knitr::kable()
+```
+
+we are primarily interested in the "badhealth_slope" variable, which is the association between bad health and adherence. We see that the 90% credible interval  is clearly positive, i.e. worse health is associated with increased adherence. Other parameters show the link between bad health and the other variables.
+
+The value of the bad health hidden variable can be interpreted e.g by it's association to NYHA levels - the "nyha_thres" variables are the thresholds for NYHA levels (we observe 6 NYHA levels: `r paste0(levels(patient_data$NYHA), collapse = ", ")`). So bad health < -1.9 would be most often (but not always) associated with NYHA 1 while bad health between 1.7 and 4.2 would be associated with NYHA 3.
+
+
+TODO: maybe show differece in adherence from "best" to "worst" patient?
+
+```{r}
 worst_health_model_ids <- fit_badhealth$summary(variables = "badhealth") %>% arrange(desc(q5)) %>% slice_head(n = 5) %>% pull(variable) %>%
   gsub("badhealth\\[|\\]", "", .)
-worst_health_subject_ids <- names(subject_id_map[subject_id_map %in% worst_health_model_ids])
+worst_health_subject_ids <- sort(names(subject_id_map[subject_id_map %in% worst_health_model_ids]) )
 ```
-
+The model assumes the worst health is observed in patients ID `r worst_health_subject_ids`.
 
 ```{r}
-badhealth_rvars <- posterior::as_draws_rvars(fit_badhealth$draws())
-linpred_adherent <- badhealth_rvars$adherent_intercept + badhealth_rvars$class_intercept[data_badhealth$classes] + 
-  badhealth_rvars$badhealth_slope * badhealth_rvars$badhealth[data_badhealth$subject] 
-
-epred_adherent <- posterior::rdo(plogis(linpred_adherent))
-
-pred_adherent <- posterior::draws_of(posterior::rvar_rng(rbinom, n = data_badhealth$N, prob = epred_adherent, size = 1))
-```
-
-```{r}
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$sex)
-
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(data_for_model1$age, 4))
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$NYHA)
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(as.character(cut(data_for_model1$VO2_max, 4)), "NA"))
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(log(data_for_model1$lab_NT_proBNP), 4))
-
-
-
-ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(substr( data_for_model1$EF,1, 1), "NA")) + ggtitle("EF/10")
-```
-
-```{r}
-linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_rvars$NT_proBNP_slope * badhealth_rvars$badhealth
-pred_NT_proBNP <- posterior::draws_of(posterior::rvar_rng(rlnorm, n = data_badhealth$N_subjects,  linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
-
-ppc_dens_overlay(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]))
-ppc_dens_overlay_grouped(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]), group = fct_collapse(patient_data$NYHA, "3-4" = c("3", "3-4")))
-```
-```{r}
-badhealth_noised <- posterior::rvar_rng(rlogis, n = data_badhealth$N_subjects, location = badhealth_rvars$badhealth)
-pred_NYHA <- 1
-for(i in 1:dim(badhealth_rvars$nyha_thres)) {
-  pred_NYHA <- pred_NYHA + (badhealth_noised > badhealth_rvars$nyha_thres[i])
+if(run_pp_checks) {
+  badhealth_rvars <- posterior::as_draws_rvars(fit_badhealth$draws())
+  linpred_adherent <- badhealth_rvars$adherent_intercept + badhealth_rvars$class_intercept[data_badhealth$classes] + 
+    badhealth_rvars$badhealth_slope * badhealth_rvars$badhealth[data_badhealth$subject] 
+  
+  epred_adherent <- posterior::rdo(plogis(linpred_adherent))
+  
+  pred_adherent <- posterior::draws_of(posterior::rvar_rng(rbinom, n = data_badhealth$N, prob = epred_adherent, size = 1))
 }
-
-pred_NYHA <- posterior::draws_of(pred_NYHA)
-obs_NYHA <- as.integer(data_badhealth$NYHA)
-
-ppc_bars(obs_NYHA, pred_NYHA)
-ppc_bars_grouped(obs_NYHA, pred_NYHA, group = cut(log(patient_data$lab_NT_proBNP), 4))
 ```
 
 ```{r}
-pred_EF <- 1
-for(i in 1:dim(badhealth_rvars$EF_thres)) {
-  pred_EF <- pred_EF + (badhealth_noised > badhealth_rvars$EF_thres[i])
+if(run_pp_checks) {
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$sex)
+  
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(data_for_model1$age, 4))
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = data_for_model1$NYHA)
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(as.character(cut(data_for_model1$VO2_max, 4)), "NA"))
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = cut(log(data_for_model1$lab_NT_proBNP), 4))
+  
+  
+  
+  ppc_bars_grouped(data_badhealth$adherent, pred_adherent, group = replace_na(substr( data_for_model1$EF,1, 1), "NA")) + ggtitle("EF/10")
 }
+```
 
-obs_EF <- as.integer(data_badhealth$EF)
-pred_EF <- posterior::draws_of(pred_EF)[,!data_badhealth$EF_missing]
-obs_EF <- obs_EF[!data_badhealth$EF_missing]
+```{r}
+if(run_pp_checks) {
+  linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_rvars$NT_proBNP_slope * badhealth_rvars$badhealth
+  pred_NT_proBNP <- posterior::draws_of(posterior::rvar_rng(rlnorm, n = data_badhealth$N_subjects,  linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
+  
+  ppc_dens_overlay(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]))
+  ppc_dens_overlay_grouped(log(data_badhealth$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]), group = fct_collapse(patient_data$NYHA, "3-4" = c("3", "3-4")))
+  
+  badhealth_noised <- posterior::rvar_rng(rlogis, n = data_badhealth$N_subjects, location = badhealth_rvars$badhealth)
+  pred_NYHA <- 1
+  for(i in 1:dim(badhealth_rvars$nyha_thres)) {
+    pred_NYHA <- pred_NYHA + (badhealth_noised > badhealth_rvars$nyha_thres[i])
+  }
+  
+  pred_NYHA <- posterior::draws_of(pred_NYHA)
+  obs_NYHA <- as.integer(data_badhealth$NYHA)
+  
+  ppc_bars(obs_NYHA, pred_NYHA)
+  ppc_bars_grouped(obs_NYHA, pred_NYHA, group = cut(log(patient_data$lab_NT_proBNP), 4))
+}
+```
 
-ppc_bars(obs_EF, pred_EF)
-ppc_bars_grouped(obs_EF, pred_EF, group = cut(log(patient_data$lab_NT_proBNP[!data_badhealth$EF_missing]), 3))
+```{r}
+if(run_pp_checks) {
+  pred_EF <- 1
+  for(i in 1:dim(badhealth_rvars$EF_thres)) {
+    pred_EF <- pred_EF + (badhealth_noised > badhealth_rvars$EF_thres[i])
+  }
+  
+  obs_EF <- as.integer(data_badhealth$EF)
+  pred_EF <- posterior::draws_of(pred_EF)[,!data_badhealth$EF_missing]
+  obs_EF <- obs_EF[!data_badhealth$EF_missing]
+  
+  ppc_bars(obs_EF, pred_EF)
+  ppc_bars_grouped(obs_EF, pred_EF, group = cut(log(patient_data$lab_NT_proBNP[!data_badhealth$EF_missing]), 3))
+}
 ```
 
 ## Adherence questionnaire
 
+Q1, Q3, Q4 - affirmitive anwer -> less adherence
+Q2 - affirmitive answer -> more adherence
+
+First, let's try a model excluding Q3 and Q4
+
+```{r}
+data_questionnaire <- data_for_model1 %>% mutate(questionnaire_2_r = 1 - questionnaire_2, questionnaire_4 = replace_na(questionnaire_4, 0))
+
+priors_questionnaire <- c(priors1, prior(normal(0,2), class = "b"))
+
+formula_questionnaire <- brmsformula(adherent_int ~ (1 | drug_class) + questionnaire_1 + questionnaire_2, family = "bernoulli")
+
+fit_questionnaire <- brm(formula_questionnaire, data = data_questionnaire, prior = priors_questionnaire, 
+            file = paste0(cache_dir, "/fit_questionnaire"), file_refit = "on_change", refresh = 500)
+
+summary(fit_questionnaire)
+
+```
+
+```{r}
+questionnaire_rvars <- posterior::as_draws_rvars(fit_questionnaire)
+prob_q1 <- mean(questionnaire_rvars$b_questionnaire_1 < 0 )
+prob_q2 <- mean(questionnaire_rvars$b_questionnaire_2 > 0 )
+prob_both <- mean(questionnaire_rvars$b_questionnaire_1 < 0 & questionnaire_rvars$b_questionnaire_2 > 0)
+
+prob_neither <- mean(questionnaire_rvars$b_questionnaire_1 > 0 & questionnaire_rvars$b_questionnaire_2 < 0)
+
+```
+
+We are left with substantial uncertainty about even the sign (let alone magnitude) of the association between Q1, Q2 and adherence. Our posterior probability that the association is positive for Q1 is `r scales::percent(prob_q1)` (as one would expect). For Q2 the association is to be expected to be negative and our posterior probability that it actually is negative is `r scales::percent(prob_q2)`. The probability that both associations are in the expected direction is `r scales::percent(prob_both)`, but we find it unlikely that neither would go in the expected direction (posterior probability is `r scales::percent(prob_neither, accuracy = 2)`)
+
+Another way to look at the same result is to predict the expected absolute difference in adherence for a group of patients that responded to both questions by indicating high adherence and a group of patients responded to both questions by indicating low adherence. While our model assumes the same relative effect on the log odds scale for all drugs, the absolute effect can differ between drugs due to their differing baseline adherence. Here's a graphical summary showing the posterior distribution and the central 50% and 95% credible intervals:
+
+```{r}
+q_pred <- crossing(data.frame(drug_class = c("BB", "ARNI", "statin", "furosemide")),
+                   data.frame(questionnaire_1 = c(0, 1), questionnaire_2 = c(1,0), label = factor(c(1,2), levels = 2:1, labels = c("Low", "High")))) %>% tidybayes::add_epred_draws(fit_questionnaire) %>%
+  group_by(drug_class, .draw) %>%
+  mutate(epred_diff = .epred[label == "High"] - .epred[label == "Low"]) %>%
+  ungroup()
+
+q_pred %>%  
+  ggplot(aes(x = epred_diff, y = drug_class)) + 
+  geom_vline(xintercept = 0, color = "blue") +
+  stat_halfeye() + 
+  scale_x_continuous("Absolute adherence difference", labels = scales::percent) +
+  scale_y_discrete("Drug class")
+
+```
+
+Numerically, the same results are:
+
+```{r}
+q_pred %>% group_by(drug_class) %>%
+  summarise(`Expected adherence difference` = scales::percent(mean(epred_diff)),
+            `95% CI` = paste0("(",scales::percent(quantile(epred_diff, prob = 0.025)), "; ", scales::percent(quantile(epred_diff, prob = 0.975)), ")"))
+            
+```
+
+So we have substantial uncertainty about the association of the questions with adherence outcome.
+
+
+
+
+```{r}
+# The results don't really change with an aggreagte model, commenting out
+
+# fit_questionnaire_aggregate <- brm(N_adherent | vint(N_drugs) ~ 1 + questionnaire_1 + questionnaire_2, 
+#                                    data = data_aggregate, 
+#                                    family = beta_binomial2, 
+#                                    stanvars = stanvars_beta_binomial2, refresh = 500,
+#                                    prior = prior(normal(0,2), class = "b"),
+#                                    file = paste0(cache_dir, "/fit_questionnaire_aggregate"), file_refit = "on_change")
+# 
+# summary(fit_questionnaire_aggregate)
+```
 

@@ -92,7 +92,9 @@ load_data_adherence1 <- function() {
 
            sex = factor(sex, levels = c(0,1), labels = c("F", "M")),
            lab_GFR = as.numeric(if_else(lab_GFR == ">1,5", "1.6", lab_GFR)),
-           VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, VO2_max)))
+           VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, VO2_max)),
+           questionnaire_4 = as.numeric(if_else(questionnaire_4 == "neodpov\u011bd\u011bl", NA_character_, questionnaire_4))
+           )
 
 
 
