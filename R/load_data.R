@@ -1,10 +1,3 @@
-column_map <- {
-  all <- read.table(here::here("column_map.txt"), encoding = "UTF-8")
-  res <- all$map
-  names(res) <- rownames(all)
-  res
-}
-
 other_diuretics <- c("indapamide", "amilorid", "HCTZ", "chlorthalidone")
 
 main_targets <- c("ACEi", "ARNI", "sartan", "MRA", "BB")
@@ -36,7 +29,12 @@ fix_NYHA <- function(nyha_vals) {
     print(res[invalid])
     stop("Invalid vals NYHA")
   }
-  res
+  res_fct <- factor(res, levels = c("1", "1-2", "2", "2-3", "3", "3-4", "4"))
+  if(any(is.na(res_fct) != is.na(res))) {
+    print(unique(res))
+    stop("Invalid NYHA factor conversion")
+  }
+  res_fct
 }
 
 EF_to_numeric <- function(EF) {
@@ -76,24 +74,52 @@ fix_EF <- function(EF) {
   res
 }
 
-load_data_adherence1 <- function() {
-  data_raw <- read_excel(here::here("private_data", "Adherence LEVEL-CHF 2020.xlsx"), sheet = "Seznam pacient\u016f", range = "A2:DM130")
+load_data_adherence <- function(cohort, range, missing_cols = list()) {
+  data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 prosinec 2021.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
+
+  column_map <- {
+    all <- read.table(here::here(paste0("column_map_", cohort, ".txt")), encoding = "UTF-8")
+    res <- all$map
+    names(res) <- rownames(all)
+    res
+  }
 
   data_wide <- data_raw %>% select(all_of(names(column_map)))
   names(data_wide) <- column_map[names(data_wide)]
 
+  for(mc in names(missing_cols)) {
+    if(mc %in% names(data_wide)) {
+      stop("Missing column not missing:", mc)
+    }
+    data_wide[[mc]] <- missing_cols[[mc]]
+  }
+
+  as.has <- function(x) {
+    x <- as.integer(x)
+    x[x > 1] <- 1
+    x
+  }
+
   data_wide <- data_wide %>%
-    mutate(across(starts_with("has."), as.integer),
+    mutate(cohort = as.character(!!cohort),
+           across(starts_with("has."), as.has),
            across(starts_with("adherent."), as.character),
            NYHA = fix_NYHA(NYHA),
            NYHA_spiro_subj = fix_NYHA(NYHA_spiro_subj),
-           across(all_of(c("EF", "EF_first_amublance", "EF_first_contact")), EF_to_numeric, .names = "{.col}_numeric"),
-           across(all_of(c("EF", "EF_first_amublance", "EF_first_contact")), fix_EF),
+           across(all_of(c("EF", "EF_first_ambulance", "EF_first_contact")), EF_to_numeric, .names = "{.col}_numeric"),
+           across(all_of(c("EF", "EF_first_ambulance", "EF_first_contact")), fix_EF),
 
-           sex = factor(sex, levels = c(0,1), labels = c("F", "M")),
+           systolic_BP = as.integer(gsub(" LVAD", "", systolic_BP)),
+           diastolic_BP = as.integer(gsub(" LVAD", "", diastolic_BP)),
+
+           sex = factor(sex, levels = c("0","1", "M", "\u017d"), labels = c("F", "M", "M2", "F2")),
+           sex = fct_collapse(sex, M = c("M", "M2"), F = c("F", "F2")),
+
            lab_GFR = as.numeric(if_else(lab_GFR == ">1,5", "1.6", lab_GFR)),
-           VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, VO2_max)),
-           questionnaire_4 = as.numeric(if_else(questionnaire_4 == "neodpov\u011bd\u011bl", NA_character_, questionnaire_4))
+           lab_NT_proBNP = as.numeric(if_else(lab_NT_proBNP == "> 35000,0", "36000", as.character(lab_NT_proBNP))),
+
+           VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, as.character(VO2_max))),
+           questionnaire_4 = as.numeric(if_else(questionnaire_4 == "neodpov\u011bd\u011bl", NA_character_, as.character(questionnaire_4)))
            )
 
 
@@ -138,13 +164,20 @@ load_data_adherence1 <- function() {
 
 
   unrecognized_levels <- data_long_raw %>% select(subject_id, drug_class, level) %>%
-    filter(!is.na(level), !grepl("^(<|>|>>)?[0-9]+([.,][0-9]*)?(E[+\\-][0-9]+)?$", level), !(level %in% c("nem\u011b\u0159ena", "neprok\u00e1z\u00e1n", "stopa")))
+    filter(!is.na(level), !grepl("^(<|>|>>)? ?[0-9]+([.,][0-9]*)?(E[+\\-][0-9]+)?$", level),
+           !(level %in% c("stopa", "stopové, kvantitativn\u011b n\u011bm\u011b\u0159iteln\u00e9 mno\u017estv\u00ed", "unavailable")),
+           !grepl("nez?m\u011b\u0159en", level),
+           !grepl("neprok\u00e1z\u00e1n", level),
+           !startsWith(level, "nebyla prok\u00e1z\u00e1na")
+           )
 
   if(nrow(unrecognized_levels) > 0) {
     print(unrecognized_levels)
     stop("Unrecognized levels")
   }
 
+  data_long_raw <- data_long_raw %>%
+    mutate(level = if_else(has == 0 & level == "unavailable", NA_character_, level))
 
   inconsistent_long <-  data_long_raw %>% group_by(subject_id, drug_class) %>%
     filter(length(unique(has)) > 1 | length(unique(adherent)) > 1)
@@ -158,12 +191,13 @@ load_data_adherence1 <- function() {
   data_long_for_checks <- data_long_raw %>%
     mutate(adherent_manual = factor(adherent, levels = c("0","1","2","3","nev\u00edme"), labels = c("not_using", "yes", "no", "cannot_measure", "unknown")),
            adherent.other_diuretics_manual  = factor(adherent.other_diuretics, levels = c(0,1,2,3), labels = c("not_using", "yes", "no", "cannot_measure")),
-           level_measured = !is.na(level) & level != "nem\u011b\u0159ena",
-           detected = level_measured & !(grepl("^<", level) | level == "0" | level == "neprok\u00e1z\u00e1n"),
+           level_measured = !is.na(level) & !grepl("nez?m\u011b\u0159en", level) & level != "unavailable",
+           detected = level_measured & !(grepl("^<", level) | level == "0" | grepl("neprok\u00e1z\u00e1n", level) | startsWith(level, "nebyla prok\u00e1z\u00e1na")),
            is_other_diuretic = drug_class %in% other_diuretics) %>%
     group_by(subject_id, drug_class) %>%
     mutate(has = any(!is.na(level)),
-           adherent = case_when(!unique(has) ~ "not_using",
+           adherent = case_when(!unique(has) & adherent_manual == "cannot_measure" ~ "cannot_measure",
+                                !unique(has) ~ "not_using",
                                 any(detected) ~ "yes",
                                 all(!level_measured) ~ "cannot_measure",
                                 TRUE ~ "no"
@@ -232,8 +266,9 @@ load_data_adherence1 <- function() {
     stop("Bad restructuring")
   }
 
-  mismatch_has <- data_long %>% filter(has, !(adherent %in% c("yes", "no")))
+  mismatch_has <- data_long %>% filter(!is.na(has), has, is.na(adherent) | !(adherent %in% c("yes", "no", "cannot_measure")))
   if(nrow(mismatch_has) > 0) {
+    print(mismatch_has)
     stop("Mismatch has")
   }
 

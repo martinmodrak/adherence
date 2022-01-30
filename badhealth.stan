@@ -1,20 +1,22 @@
 data {
   int<lower=0> N;
   int<lower=0,upper=1> adherent[N];
-  int<lower=2> N_subjects;
-  int<lower=1, upper=N_subjects> subject[N];
+  int<lower=2> N_measurements;
+  int<lower=1, upper=N_measurements> measurement[N];
   int<lower=2> N_classes;
   int<lower=1, upper=N_classes> classes[N];
 
   int<lower=2> N_NYHA;
-  int<lower=0, upper=N_NYHA> NYHA[N_subjects];
-  int<lower=0,upper=1> VO2_max_missing[N_subjects];
-  vector<lower=0>[N_subjects] VO2_max;
-  vector<lower=0>[N_subjects] NT_proBNP;
+  int<lower=0, upper=N_NYHA> NYHA[N_measurements];
+  int<lower=0,upper=1> VO2_max_missing[N_measurements];
+  vector<lower=0>[N_measurements] VO2_max;
+  int<lower=0,upper=1> NT_proBNP_missing[N_measurements];
+  vector<lower=0>[N_measurements] NT_proBNP;
+  int<lower=0, upper=1> cohort[N_measurements];
 
   int<lower=2> N_EF;
-  int<lower=0,upper=1> EF_missing[N_subjects];
-  int<lower=0, upper=N_EF> EF[N_subjects];
+  int<lower=0,upper=1> EF_missing[N_measurements];
+  int<lower=0, upper=N_EF> EF[N_measurements];
 
 }
 
@@ -35,9 +37,11 @@ parameters {
   real NT_proBNP_slope;
   real<lower=0> NT_proBNP_sd;
 
+  real cohort_diff;
+
   ordered[N_EF - 1] EF_thres;
 
-  vector[N_subjects] badhealth;
+  vector[N_measurements] badhealth;
 
 }
 
@@ -60,15 +64,17 @@ model {
   NT_proBNP_sd ~ normal(0, 1);
   EF_thres ~ normal(0, 2);
 
-  adherent ~ bernoulli_logit(adherent_intercept + class_intercept[classes] + badhealth_slope * badhealth[subject]);
+  adherent ~ bernoulli_logit(adherent_intercept + class_intercept[classes] + badhealth_slope * badhealth[measurement] + cohort_diff * to_vector(cohort[measurement]));
   NYHA ~ ordered_logistic(badhealth, nyha_thres);
-  NT_proBNP ~ lognormal(NT_proBNP_intercept + NT_proBNP_slope * badhealth, NT_proBNP_sd);
-  for(s in 1:N_subjects) {
+  for(s in 1:N_measurements) {
     if(!VO2_max_missing[s]) {
       VO2_max[s] ~ lognormal(VO2_max_intercept + VO2_max_slope * badhealth[s], VO2_max_sd);
     }
     if(!EF_missing[s]) {
       EF[s] ~ ordered_logistic(badhealth[s], EF_thres);
+    }
+    if(!NT_proBNP_missing[s]) {
+      NT_proBNP[s] ~ lognormal(NT_proBNP_intercept + NT_proBNP_slope * badhealth[s], NT_proBNP_sd);
     }
   }
 }
