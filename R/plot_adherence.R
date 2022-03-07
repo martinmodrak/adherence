@@ -1,5 +1,5 @@
-scale_colour_cohort <- scale_color_manual(values = c("2020" = "black", "2018" = "#DD4803"))
-scale_shape_cohort <- scale_shape_manual(values = c("2020" = 15, "2018" = 17))
+scale_colour_cohort <- ggplot2::scale_color_manual(values = c("2020" = "black", "2018" = "#DD4803"))
+scale_shape_cohort <- ggplot2::scale_shape_manual(values = c("2020" = 15, "2018" = 17))
 
 plot_adherence_by_continuous <- function(data_long, by_val) {
   data_long %>%

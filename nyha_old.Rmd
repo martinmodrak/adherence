@@ -1,0 +1,272 @@
+---
+title: "NYHA dle spiroergometrie vs. NYHA subjektivně"
+output: html_document
+author: "Martin Modrák"
+date: '`r format(Sys.time(), "%d. %m., %Y")`'
+---
+
+```{r setup, message=FALSE, echo = FALSE, results='hide', warning = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+library(knitr)
+library(tidyverse)
+library(readxl)
+library(here)
+library(cowplot)
+library(scales)
+library(brms)
+library(bayesplot)
+options(mc.cores = parallel::detectCores())
+```
+
+Dokument je rozdělen na dvě hlavní části - nejprve obecný deskriptivní pohled na data pro lepší porozumění a poté snaha o vyvození nějakých kvantifikovatelných závěrů.
+
+# Pohled na data
+
+```{r}
+main_data <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "BJ2:BL94") 
+
+id <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="Seznam pacientů", range = "A2:A94")
+
+adherence <- read_excel(here("private_data","Spiroergometrie - soubor pacientů 27.2. - kopie pro statistiku.xlsx"), sheet ="List1", range = "F2:F93", col_names = "Adherence") 
+
+
+
+data <- cbind(id,main_data, adherence) %>%
+  mutate(Adherence = factor(Adherence, ordered = TRUE, levels = c(1:6), labels = c("Plně adherentní","Pravděpodobně adherentní","Možná neadherentní","Částečně neadherentní","Pravděpodobně neadherentní","Plně neadherentní"))) %>%
+  rename(`NYHA spiro tabulka` = `NYHA dle spiroergometrie v minulosti`, `NYHA subj.` = `NYHA v minulosti`) %>%
+  mutate(`NYHA subj.` = as.integer(`NYHA subj.`))
+
+NYHA_VO2max_threshold = c(10, 16, 20)
+NYHA_VO2max_breaks = c(min(data$VO2max)-0.01, 10-1e-6, 16, 20+1e-6, max(data$VO2max) + 0.1)
+
+
+data <- data %>%
+  mutate(`NYHA spiro` = data$VO2max %>% cut(NYHA_VO2max_breaks, labels = 4:1, right = FALSE) %>% as.character() %>% as.integer()) %>%
+  mutate(`Adherence skupina` = factor(if_else(Adherence <= "Možná neadherentní", "Adherentní","Neadherentní")),
+       `NYHA konzistentní` = factor(`NYHA subj.` == `NYHA spiro`, levels = c(TRUE,FALSE), labels = c("Ano","Ne")))
+
+```
+
+Data obsahují `r nrow(data)` pacientů.
+
+Některá spiro NYHA v tabulce nesedí se spiro daty (pro rozdělení používáme prahy `r paste(NYHA_VO2max_threshold, sep = ", ")`).
+
+```{r}
+data %>% filter(`NYHA spiro tabulka` != `NYHA spiro`) %>% select(`Číslo pacienta`, `NYHA spiro tabulka`, VO2max, `NYHA spiro`) %>% rename(`NYHA spiro vypočteno` = `NYHA spiro`) %>% kable()
+```
+
+Velká většina pacientů je adherentní:
+
+```{r}
+data %>% group_by(Adherence) %>% summarise(pocet = n()) %>% kable()
+```
+
+```{r}
+#colors_adherence <- c('#b2182b','#d6604d','#f4a582','#92c5de','#4393c3','#2166ac')
+colors_adherence <- c('#d73027','#f46d43','#fdae61','#abd9e9','#74add1','#4575b4')
+colors_adherence_skupina <- colors_adherence[c(2,5)]
+adherentni_delici_bod <- data %>% filter(`Adherence skupina` == "Adherentní") %>% pull(Adherence) %>% max()
+```
+
+Pro zjednodušení v následujících obrázcích označíme pacienty z kategorie *`r adherentni_delici_bod`* a lepší jako adherentní a ostatní jako neadherentní.
+
+Vztah NYHA subjektivní vs. NYHA dle spiro:
+
+```{r}
+breaks <- c(2:4 - 0.5)
+jitter_size <- 0.2
+exp_limits <- c(1 - jitter_size - 0.1, 4 + jitter_size + 0.1)
+data %>%
+  ggplot(aes(y = `NYHA subj.`, x = `NYHA spiro`, color = `Adherence skupina`, fill = `Adherence skupina`, group = `Adherence skupina`)) + 
+  geom_abline(slope = 1, intercept = 0) +
+  geom_smooth(method = "lm", alpha = 0.15) + 
+  geom_jitter(width = jitter_size, height = jitter_size, size = 2) +
+  scale_x_continuous(minor_breaks = breaks) +
+  scale_y_continuous(minor_breaks = breaks) +
+  # scale_color_manual(values = colors_adherence_skupina) +
+  # scale_fill_manual(values = colors_adherence_skupina) +
+  expand_limits(x = exp_limits, y = exp_limits) +
+  theme(panel.grid.minor = element_line(colour = "lightgray"))
+```
+
+Co tečka, to pacient. Barevné čáry - proložený trend zvlášť pro každou skupinu - pás kolem je nejistota, v zásadě jsou všechny přímky ležící uvnitř pásu konzistentní s daty. Černá šikmá čára je "ideální trend", kdyby objektivní a subjektivní měřily tu samou věc, tak by proložený trend měl ležet na černé čáře. Z toho, že jsou od černé čáry dost daleko lze usoudit, že rozdíl je systematický.
+Naopak vidíme, že adherentní a neadherentní pacienti mají trend téměř totožný.
+
+Zároveň ale vidíme, že se NYHA subjektivní a dle spiro poměrně výrazně liší. Zejména pak, že subjektivní NYHA je často nižší než NYHA dle spiro. Zde je ale třeba být trochu opatrný s interpretací, tím, že NYHA je omezená škála, mohou vznikat falešné vzory: je-li NYHA 4 dle spiro, tak subjektivní NYHA může být jen stejná nebo nižší (obráceně pro NYHA 1). Pokud tedy máme v sobouru více pacientů s vysokým NYHA dle spiro než s nízkým NYHA dle spiro (což máme), tak může vzniknout dojem, že subjektivní NYHA častěji podhodnocuje než nadhodnocuje i kdyby subjektivní hodnocení žádnou systematickou chybe nemělo. Tuto variantu ale můžeme do velké míry vyloučit, protože i při NYHA 2 dle spiro je subjektivní NYHA častěji 1 než 3 nebo proto, že při NYHA 3 dle spiro není u žádného pacienta subjektivní NYHA 4. 
+
+
+Shodu trendu mezi adherentními a neadherentními pacienty lze také vyjádřit korelací (měřeno od -1 = přesně opačný trend, přes 0 = žádná asociace po 1 = úplně stejný trend) - zde konkrétně používáme Spearmanův korelační koeficient, ale výsledky jsou téměř stejné i s jinými měřítky korelace.
+
+```{r}
+data %>% group_by(`Adherence skupina`) %>% summarise(korelace = cor(`NYHA subj.`,`NYHA spiro`)) %>%
+  rbind(data %>% summarise(korelace = cor(`NYHA subj.`,`NYHA spiro`, method = "spearman")) %>% mutate(`Adherence skupina` = "Vše dohromady")) %>% kable()
+```
+
+Vidíme, že se mezi skupinami příliš neliší.
+
+Pro detailnější pohled se též můžeme podívat na NYHA subjektivně versus naměřené spiro:
+
+```{r}
+step_data <- tibble(VO2max = NYHA_VO2max_breaks, NYHA = c(4:1,1))
+theoretical_geom <- geom_step(aes(x = VO2max, y = NYHA), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
+data %>%
+  ggplot(aes(y = `NYHA subj.`, x = VO2max, color = `Adherence skupina`, fill=`Adherence skupina`)) + 
+  theoretical_geom +
+  geom_smooth(method = lm, alpha = 0.15) +
+  geom_jitter(width = 0, height = 0.1, size = 2) +
+  scale_x_continuous(minor_breaks = NYHA_VO2max_breaks) +
+  scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
+  expand_limits(y = exp_limits) +
+  #scale_color_manual(values = colors_adherence_skupina) +
+  theme(panel.grid.minor.x = element_line(colour = "lightgray"))
+
+```
+
+Obdobně jako u předchozího vidíme jednotlivé pacienty a proložený lineární trend zvlášť pro každou skupinu. Svislé čáry naznačují hranice kategorizace spiroergometrie a tlustá světle modrá čáry ukazuje, jak by vypadala kategorizace přesně dle spiro.
+
+Cílem tohoto obrázku je ujasnit si, jestli není rozdíl mezi subjektivním a objektivním NYHA dán především pacienty, kteří jsou na hraně kategorizace. To se částečně děje - například pacienti se subjektivním NYHA 1 ale objektivním NYHA 2 maji VO2max spíše blíž k 20 než 16. Ale nezdá se, že by to mohlo vysvělit velkou část neshod.
+
+# Modelování a kvantifikace
+
+Chceme-li datům lépe porozumět, musíme udělat nějaké předpoklady a převést realitu do matemického jazyka. V následujícím budu předpokládat jednoduchý idealizovaný model toho, jak lékař stanovuje subjektivní NYHA: pacient má nějakou "skutečnou" míru funkce srdce, kterou lze vyjádřit jedním číslem $a$. Lékař se při vyšetření pokouší zjistit $a$, ale zjistí ho nepřesně jako $b = a + e$, kde $e$ je chyba daná vyšetřením nebo tím, jak se pacient vyspal apod.. Předpokládáme, že chyba není systematická, tj. že je stejně pravděpodobné, že $e > 0$ jako že $e < 0$. Lékář pak má v hlavě "tabulku", podobnou té pro určení NYHA dle spiro - tedy prahové hodnoty pro přiřazení NYHA dle hodnoty $b$. Dále předpokládáme, že spirergometrie se pokouší změřit to stejné $a$ a měří ho taktéž s chybou, která není systematická. 
+
+Oba předpoklady, zejména to, že spiroergometrie nemá systematickou chybu jsou odvážné a určitě neodrážejí skutečnost. Nicméně doufáme, že nejsou úplně mimo. Zároveň, pokud bycho tyto předpoklady neudělali, nemohli bychom již o datech říct téměř nic. 
+
+Z mých testů se také ukazuje, že tento model alespoň v jednom aspektu nesedí na data. Model předpokládá, že variabilita v subjetivním NYHA mezi pacienty se stejným NYHA dle spiro bude (v jistém matematickém smyslu) srovnatelná. Pro NYHA dle spiro 1 je ale v datech znatelně vyšší než u ostatních.
+
+```{r}
+data_brms <- data %>% rename(NYHA_subj = `NYHA subj.`) %>% mutate(id = factor(`Číslo pacienta`))
+fit_boundaries <- brm(NYHA_subj ~ VO2max , family = cumulative("logit"), data = data_brms, file = here("stored_fits","boundaries"))
+```
+
+Nicméně s využitím tohoto modelu se můžeme zeptat: jaké prahy pro spiroergometrii by odpovídaly tomu, jak lékaři hodnotí NYHA subjektivně:
+
+```{r}
+params <-  extract_draws(fit_boundaries)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$dpars$mu$cs$Intercept
+threshold_samples <- array(-Inf, c(params$nsamples, 3))
+for(i in 1:3) {
+  threshold_samples[,i] <- threshold_raw[,i] / b
+}
+threshold_samples[threshold_samples < -15] <- -15
+predicted_thresholds <- tibble(`NYHA 1` = threshold_samples[,1], `NYHA 2` = threshold_samples[,2], `NYHA 3` = threshold_samples[,3])
+true_thresholds <- tibble(NYHA = paste("NYHA",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()  + expand_limits(y = 0.9)
+
+
+```
+
+Zde svislé čáry ukazují prahy dle guidelines, zatímco barevné křivky ukazují rozložení stejných prahů dle modelu - vzhledem k malému množství dat nemá model velkou jistotu v tom, kde by prahy přesně byly, což je vidět na tvaru těchto křivek.
+
+Křivka pro práh pro NYHA 3 je trochu podivná, protože naznačuje, že by tento práh mohl být s velkou pravděpodobností menší než nula. To je troch dané omezením modelu (neví, že VO2max musí být kladné číslo), ale také to odpovídá datům - téměř žádný pacient nemá subjektivní NYHA 4 a tudíž by práh mohl klidně být 0 a kategorizace do NYHA 4 daná jen "chybou měření" při subjektivním vyhodnocení.
+
+V našem modelu by lékaři též měli nižší práh pro zařazení od NYHA 2 než dle guidelines, pro zařazení do NYHA 1 by ale naopak měli práh spíše větší. To opět odpovídá datům, kdy pacienti s VO2max 20-25 jsou častěji subjektivně hodnoceni jako NYHA 2 nebo 3 než jako NYHA 1.
+
+Otázkou je, jestli rozdíly nevznikají časovým odstupem mezi subjektivním hodnocením NYHA a spiro, kdy se komplikovaní pacienti mohli v mezičase zhoršit, to ale v datech bohužel není uvedeno.
+
+Obdobně můžeme porovnat křivku průměrného subjektivního NYHA hodnocení podle hodnoty spiro a porovnat s guidelines:
+
+```{r}
+fit <- fit_boundaries
+plot_fitted_trend <- function(fit, adherence = FALSE) {
+  data_to_predict <- tibble(VO2max = 5:40)
+  if(adherence) {
+    data_to_predict <- data_to_predict %>% crossing(tibble(Adherence = factor(c("Plně adherentní","Plně neadherentní"), ordered = TRUE, levels = levels(data$Adherence) )))
+  } 
+  
+  predictions <- posterior_linpred(fit, nsamples = 100, newdata = data_to_predict, transform = TRUE, summary = FALSE)
+  predictions_mean <- 1 * predictions[,,1] + 2* predictions[,,2] + 3 * predictions[,,3] + 4 * predictions[,,4]
+  predictions_df <- data_to_predict %>% cbind(as.data.frame(t(predictions_mean))) %>% 
+    gather("sample","NYHA", V1:V100) 
+  
+  if(adherence) {
+    predictions_df <- predictions_df %>% mutate(group = factor(paste(sample,Adherence)), Adherence = factor(Adherence, ordered = FALSE))
+    aesthetics <- aes(x = VO2max, y = NYHA, color = Adherence)
+  } else {
+    predictions_df <- predictions_df %>% mutate(group = sample)
+    aesthetics <- aes(x = VO2max, y = NYHA)
+  }
+  
+  predictions_df %>% droplevels() %>%
+    ggplot(aesthetics) +
+    theoretical_geom +
+    geom_line(aes(group = group), alpha = 0.3) + 
+    scale_x_continuous(minor_breaks = NYHA_VO2max_breaks) +
+    scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
+    expand_limits(y = exp_limits) +
+    theme(panel.grid.minor = element_line(colour = "lightgray")) +
+    guides(color = guide_legend(override.aes = list(alpha = 1)))
+}
+
+plot_fitted_trend(fit_boundaries)
+```
+
+Tlustá modrá čára ukazuje rozdělení dle guidelines, každá z černých čar ukazuje jeden možný průběh subjektivního hodnocení - rozptyl těchto čar nám ukazuje nejistotu danou tím, že máme málo dat. Opět nám to ukazuje, že pro nízké VO2max je subjektivní NYHA spíše nižší než dle guidelines, ale pro vysoké VO2max je naopak vyšší.
+
+## Rozdíly dle adherence
+
+Zjistíme též, jestli nám tento model neumožní poznat rozdíly v subjektivním NYHA dle adherence. Nejprve předpokládejme, že rozdíl mezi adherentním a neadherentními pacienty by byl jen v posunutí křivky nahoru či dolů (ale "sklon" by zůstal stejný). Zároveň předpokládáme, že částečně adherentní pacienti mají tento posun někde mezi plně adherentními a plně neadherentními.
+
+Podívejme se, jak by takové křivky vypadaly:
+
+```{r}
+fit_adherence <- brm(NYHA_subj ~ VO2max + mo(Adherence), family = cumulative("logit"), data = data_brms, file = here("stored_fits","adherence"))
+```
+```{r}
+plot_fitted_trend(fit_adherence, TRUE)
+```
+
+Pro přehlednost zobrazujeme jen křivky pro plně adherentní a plně neadherentní pacienty - pro ostatní kategorie adherence budou "někde mezi". Vidíme, že se obě skupiny křivek překrývají, ale křivky pro neadherentní mají větší rozptyl - neadheretních pacientů je v datech méně. Totéž lze vidět číselně v souhrnu koeficientů statistického modelu:
+
+```{r}
+fit_adherence
+```
+Konkrétně nás zajímá řádek "moAdherence" pod "population-level effects". Vidíme, že odhad je velmi blízký nule, zatímco CI (credible interval, což je něco podobného jako konfidenční interval, ale je tu drobné technický rozdíl) je poměrně široký a téměř symetrický podle nuly. Nemůžeme tedy zcela vyloučit, že rozdíl dle adherence existuje a je poměrně velký, nemůžeme ho ale ani potvrdit.
+
+Můžeme též vyzkoušet, co se stane, když povolíme, aby se dle adherence měnil i sklon křivky - opět budeme předpokládat, že je zde plynulý přechod mezi krajními hodnotami adherence - obrázek by pak vypadal takto:
+
+```{r}
+fit_adherence_int <- brm(NYHA_subj ~ VO2max * mo(Adherence), family = cumulative("logit"), data = data_brms, file = here("stored_fits","adherence_int"))
+plot_fitted_trend(fit_adherence_int, TRUE)
+
+```
+
+Zde jasně narážíme na to, že v datech je mále neadherentních pacientů a tudíž nemůžeme moc přesně určitě průběh "jejich" křivky. Lze se i podívat numericky na koeficienty tohoto bohatšího modelu:
+
+
+```{r}
+fit_adherence_int
+```
+
+Vidíme, že přidáním více parametrů do modelu se CI pro adherenci (`moAdherence` v `Population-Level Effects`) ještě více roztáhl. To, že střední odhad je nyní mírně záporný nelze brát moc vážně, jelikož možná chyba je výrazně větší. Zároveň koeficient pro sklon (`moAdherence:VO2max` v `Population-Level Effects`) je odhadován na zhruba 0 a jeho CI je opět poměrně široké a symetrické podle nuly - nelze tedy ani říci, jestli bychom spíše čekali, že neadherentní pacienti budou mít "strmější" či "pozvolnější" křivku vztahu mezi VO2max a subjektivním NYHA. Zároveň nemáme dost dat ani na to, abychom jasně řekli, že rozdíl není nebo je malý ani na to, abychom jasně řekli, že rozdíl existuje.
+
+# Kontrolní výpočty
+
+Následují některé kontroly, které jsem si dělal, abych se ujistil, že mi vše funguje tak, jak má.
+
+Rozložení VO2max v celých datech.
+
+```{r}
+data %>% ggplot(aes(x = VO2max)) + geom_histogram(binwidth = 2)
+```
+
+Koeficienty modelu, kde jsme pouze odhadovali prahy a tzv. posterior predictive check, kontrolující, že model dává smysl (y by mělo být podobné alespoň některým yrep)
+
+```{r}
+fit_boundaries
+pp_check(fit_boundaries, type = "hist", binwidth = 1, nsamples = 24)
+```
+
+Předpovídaná variabilita (sd) NYHA subj. podle modelu (yrep) a dle dat (y). Nejprve celková, ta sedí, pak rozděleno dle objektivního NYHA (moc nesedí pro NYHA 1)
+
+```{r}
+pp_check(fit_boundaries, type = "stat", stat = "sd", binwidth = 0.02)
+predictions_pp_check <- posterior_predict(fit_boundaries)
+ppc_stat_grouped(data$`NYHA subj.`, predictions_pp_check, group = data$`NYHA spiro`, stat = "sd", binwidth = 0.1)
+
+```
+

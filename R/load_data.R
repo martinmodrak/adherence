@@ -75,7 +75,7 @@ fix_EF <- function(EF) {
 }
 
 load_data_adherence <- function(cohort, range, missing_cols = list()) {
-  data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 prosinec 2021.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
+  data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 unor 2022.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
 
   column_map <- {
     all <- read.table(here::here(paste0("column_map_", cohort, ".txt")), encoding = "UTF-8")
@@ -100,6 +100,7 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
     x
   }
 
+  browse()
   data_wide <- data_wide %>%
     mutate(cohort = as.character(!!cohort),
            across(starts_with("has."), as.has),
@@ -281,8 +282,3 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
     long = data_long
   )
 }
-
-data_adherence1_to_long_raw <- function(data_wide) {
-
-}
-
