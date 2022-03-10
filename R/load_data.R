@@ -10,11 +10,14 @@ nyha_from_excel_dates <- function(nyha_dates){
 
 fix_NYHA <- function(nyha_vals) {
   valid_vals <- c(as.character(1:4), paste0(1:3,"-",2:4))
+  if(is.numeric(nyha_vals)) {
+    nyha_vals <- as.character(nyha_vals)
+  }
   res <- case_when(is.na(nyha_vals) ~ NA_character_,
                    nyha_vals %in% valid_vals ~ nyha_vals,
-                   nyha_vals == "1+" ~ "1-2",
-                   nyha_vals == "2+" ~ "2-3",
-                   nyha_vals == "3+" ~ "3-4",
+                   nyha_vals %in% c("1+","1.5") ~ "1-2",
+                   nyha_vals %in% c("2+","2.5") ~ "2-3",
+                   nyha_vals %in% c("3+","3.5") ~ "3-4",
                    startsWith(nyha_vals, "4") ~ nyha_from_excel_dates(nyha_vals),
                    TRUE ~ NA_character_
   )
@@ -29,7 +32,7 @@ fix_NYHA <- function(nyha_vals) {
     print(res[invalid])
     stop("Invalid vals NYHA")
   }
-  res_fct <- factor(res, levels = c("1", "1-2", "2", "2-3", "3", "3-4", "4"))
+  res_fct <- factor(res, levels = c("1", "1-2", "2", "2-3", "3", "3-4", "4"), ordered = TRUE)
   if(any(is.na(res_fct) != is.na(res))) {
     print(unique(res))
     stop("Invalid NYHA factor conversion")
@@ -74,6 +77,31 @@ fix_EF <- function(EF) {
   res
 }
 
+fix_BP <- function(bp) {
+  bp[bp == "LVAD"] <- NA_character_
+  res <- as.integer(gsub(" ?LVAD", "", bp))
+
+  if(!all(is.na(bp) == is.na(res))) {
+    print(bp[!is.na(bp) & is.na(res)])
+    stop("NAs introduced")
+  }
+
+}
+
+fix_spiro_date <- function(spiro_date) {
+  if(is.character(spiro_date)) {
+    spiro_date[grepl("nem.|nehodnotiteln.", spiro_date)] <- NA
+    res <- janitor::excel_numeric_to_date(as.numeric(spiro_date))
+    if(!all(is.na(spiro_date) == is.na(res))) {
+      print(spiro_date[!is.na(spiro_date) & is.na(res)])
+      stop("NAs introduced")
+    }
+    res
+  } else {
+    spiro_date
+  }
+}
+
 load_data_adherence <- function(cohort, range, missing_cols = list()) {
   data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 unor 2022.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
 
@@ -100,23 +128,24 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
     x
   }
 
-  browse()
   data_wide <- data_wide %>%
     mutate(cohort = as.character(!!cohort),
            across(starts_with("has."), as.has),
            across(starts_with("adherent."), as.character),
            NYHA = fix_NYHA(NYHA),
            NYHA_spiro_subj = fix_NYHA(NYHA_spiro_subj),
+           spiro_date = fix_spiro_date(spiro_date),
            across(all_of(c("EF", "EF_first_ambulance", "EF_first_contact")), EF_to_numeric, .names = "{.col}_numeric"),
            across(all_of(c("EF", "EF_first_ambulance", "EF_first_contact")), fix_EF),
 
-           systolic_BP = as.integer(gsub(" LVAD", "", systolic_BP)),
-           diastolic_BP = as.integer(gsub(" LVAD", "", diastolic_BP)),
+           systolic_BP = fix_BP(systolic_BP),
+           diastolic_BP = fix_BP(diastolic_BP),
 
            sex = factor(sex, levels = c("0","1", "M", "\u017d"), labels = c("F", "M", "M2", "F2")),
            sex = fct_collapse(sex, M = c("M", "M2"), F = c("F", "F2")),
 
-           lab_GFR = as.numeric(if_else(lab_GFR == ">1,5", "1.6", lab_GFR)),
+           lab_GFR_censored = grepl("^> ?1,50?", data_wide$lab_GFR),
+           lab_GFR = as.numeric(if_else(lab_GFR_censored, "1.6", lab_GFR)),
            lab_NT_proBNP = as.numeric(if_else(lab_NT_proBNP == "> 35000,0", "36000", as.character(lab_NT_proBNP))),
 
            VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, as.character(VO2_max))),

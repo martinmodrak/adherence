@@ -27,7 +27,7 @@ run_pp_checks <- FALSE
 
 devtools::load_all()
 
-source(here::here("load_data_into_session.R"))
+source(here::here("data_into_session.R"))
 ```
 
 Following subjects have discrepancy between the "Má XX" column and measured levels.

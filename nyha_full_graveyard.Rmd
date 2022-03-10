@@ -1,0 +1,60 @@
+---
+title: "NYHA - graveyard"
+output: html_notebook
+---
+
+
+
+
+```{r}
+fit_boundaries <- brm(factor(NYHA_spiro_subj, ordered = TRUE) ~ VO2_max , family = cumulative("logit"), data = data_nyha, file = here::here("stored_fits","boundaries_full"), file_refit = "on_change")
+```
+
+Nicméně s využitím tohoto modelu se můžeme zeptat: jaké prahy pro spiroergometrii by odpovídaly tomu, jak lékaři hodnotí NYHA subjektivně:
+
+```{r}
+params <-  prepare_predictions(fit_boundaries)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$thres$thres
+use_levels <- 5
+threshold_samples <- array(-Inf, c(params$ndraws, use_levels))
+for(i in 1:use_levels) {
+  threshold_samples[,i] <- threshold_raw[,i] / b
+}
+threshold_samples[threshold_samples < -25] <- -25
+colnames(threshold_samples) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro_subj)[1:use_levels])
+predicted_thresholds <- as_tibble(threshold_samples)
+true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()  + expand_limits(y = 0.9)
+
+
+```
+
+```{r}
+fit_boundaries_range <- brm(NYHA_spiro_subj_min | vint(NYHA_spiro_subj_max)  ~ VO2_max , family = censored_cumulative(), stanvars = censored_cumulative_stanvars, data = data_nyha, file = here::here("stored_fits","boundaries_range"), file_refit = "on_change")
+```
+
+
+```{r}
+params <-  prepare_predictions(fit_boundaries_range)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$thres$thres
+use_levels <- 3
+threshold_samples <- array(-Inf, c(params$ndraws, use_levels))
+for(i in 1:use_levels) {
+  threshold_samples[,i] <- threshold_raw[,i] / b
+}
+threshold_samples[threshold_samples < -25] <- -25
+colnames(threshold_samples) <- paste0("NYHA ", 1:use_levels)
+predicted_thresholds <- as_tibble(threshold_samples)
+true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()  + expand_limits(y = 0.9)
+
+
+```   

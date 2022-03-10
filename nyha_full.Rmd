@@ -22,3 +22,184 @@ devtools::load_all()
 
 source(here::here("data_into_session.R"))
 ```
+
+```{r}
+NYHA_VO2max_threshold = c(10, 16, 20)
+NYHA_VO2max_breaks = c(min(data_wide$VO2_max, na.rm = TRUE)-0.01, 10-1e-6, 16, 20+1e-6, max(data_wide$VO2_max, na.rm = TRUE) + 0.1)
+data_wide <- data_wide %>% 
+  mutate(NYHA_spiro_obj_manual = NYHA_spiro_obj,
+         NYHA_spiro_obj = VO2_max %>% cut(NYHA_VO2max_breaks, labels = 4:1, right = FALSE) %>% as.character() %>% as.integer())
+
+data_wide %>% filter((NYHA_spiro_obj_manual != NYHA_spiro_obj & !is.na(NYHA_spiro_obj)) | 
+                       is.na(NYHA_spiro_obj) & !is.na(NYHA_spiro_obj)) %>% 
+  select(subject_id, cohort, NYHA_spiro_obj, NYHA_spiro_obj_manual, VO2_max)
+
+
+data_long_sum_no_fur <- data_long %>%
+  filter(has) %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
+            N_adherent_no_fur = sum(has & adherent_int & drug_class != "furosemide", na.rm = TRUE), 
+            N_drugs_no_fur = sum(has  & drug_class != "furosemide", na.rm = TRUE),
+            adherence_category = case_when(N_adherent_no_fur == N_drugs_no_fur ~ "C - all",
+                                 N_adherent_no_fur == N_drugs_no_fur - 1 ~ "B - all but one",
+                                 TRUE ~ "A - nonadherent"
+                                 )) 
+
+data_wide_old <- data_wide 
+data_wide <- data_wide %>% 
+  inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"))
+
+if(nrow(data_wide) != nrow(data_wide_old)) {
+  stop("Bad join")
+}
+
+data_nyha <- data_wide %>% filter(!is.na(NYHA_spiro_subj), !is.na(VO2_max))
+```
+
+```{r}
+brewer_palette_adherence <- "Set1"
+jitter_size <- 0.3
+exp_limits <- c(1 - jitter_size - 0.1, 4 + jitter_size + 0.1)
+valid_tiles <- tribble(~NYHA_spiro_obj, ~NYHA_spiro_subj,
+                       1, "1",
+                       1, "1-2",
+                       2, "1-2",
+                       2, "2",
+                       2, "2-3",
+                       3, "2-3",
+                       3, "3",
+                       3, "3-4",
+                       4, "3-4",
+                       4, "4") %>%
+  mutate(NYHA_spiro_subj = factor(NYHA_spiro_subj, levels = levels(data_nyha$NYHA_spiro_subj)))
+         
+data_nyha %>%
+  ggplot(aes(y = as.integer(NYHA_spiro_subj), x = NYHA_spiro_obj, color = adherence_category, fill = adherence_category, group = adherence_category)) + 
+  #geom_abline(slope = 2, intercept = -1) +
+  #geom_smooth(formula = y ~ x, method = "lm", alpha = 0.15) + 
+  geom_tile(data = valid_tiles, aes(y = as.integer(NYHA_spiro_subj), x = NYHA_spiro_obj), inherit.aes = FALSE, fill = "orangered", alpha = 0.2) +
+  geom_jitter(width = jitter_size, height = jitter_size, size = 1, alpha = 0.7) +
+  scale_x_continuous("NYHA from VO2 max", minor_breaks = 2:4 - 0.5) +
+  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+  scale_color_brewer("Adherence", palette = brewer_palette_adherence) +
+  scale_fill_brewer("Adherence", palette = brewer_palette_adherence) +
+  #expand_limits(x = exp_limits, y = exp_limits) +
+  #coord_cartesian(ylim = c(1 - jitter_size - 0.1, 7 + jitter_size + 0.1)) +
+  theme(panel.grid.minor = element_line(colour = "lightgray"))
+```
+
+```{r}
+step_data <- tibble(VO2_max = NYHA_VO2max_breaks, NYHA = factor(as.character(c(4:1,1)), levels = levels(data_nyha$NYHA_spiro_subj)))
+                    
+theoretical_geom <- geom_step(aes(x = VO2_max, y = as.integer(NYHA)), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
+data_nyha %>%
+  ggplot(aes(y = as.integer(NYHA_spiro_subj), x = VO2_max, color = adherence_category, fill=adherence_category)) + 
+  theoretical_geom +
+  geom_smooth(method = lm, alpha = 0.15) +
+  geom_jitter(width = 0, height = 0.1, alpha = 0.7) +
+  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+  scale_color_brewer("Adherence", palette = brewer_palette_adherence) +
+  scale_fill_brewer("Adherence", palette = brewer_palette_adherence) +
+  scale_x_continuous("VO2 max", minor_breaks = NYHA_VO2max_breaks) +
+  # scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
+  #scale_color_manual(values = colors_adherence_skupina) +
+  theme(panel.grid.minor.x = element_line(colour = "lightgray"))
+
+```
+
+```{r}
+n_low_VO2_4 <- data_nyha %>% filter(VO2_max <= 10, NYHA_spiro_subj >= "3-4") %>% nrow()
+```
+
+
+Importantly, despite seeing a large number of patients with VO2 max < 10, only two o
+
+```{r}
+censored_cumulative <- function() {
+  custom_family(
+    "censored_ordered_logistic", dpars = c("mu"),
+    links = c("identity"), lb = 1,
+    vars = "vint1[n]",
+    type = "int", threshold = "flexible", specials = c("ordinal", "ordered_thres", "thres_minus_eta"))
+}
+
+censored_cumulative_stanvars <- stanvar(block = "functions", scode = '
+  real censored_ordered_logistic_lpmf(int min, real mu, vector Intercept, int max) {
+    if(min > max) {
+      reject("min > max");
+    }
+    if(min == max) {
+      return(ordered_logistic_lpmf(min | mu, Intercept));
+    } else {
+      vector[max - min + 1] vals;
+      for(i in min:max) {
+        vals[i - min + 1] = ordered_logistic_lpmf(i | mu, Intercept);
+      }  
+      return(log_sum_exp(vals));
+    }
+  }
+' )
+
+data_nyha <- data_nyha %>%
+  mutate(NYHA_spiro_subj_min = as.integer(gsub("-[0-9]", "", NYHA_spiro_subj)),
+         NYHA_spiro_subj_max = as.integer(gsub("[0-9]-", "", NYHA_spiro_subj)))
+
+bad_nyha_range <- data_nyha %>% filter(NYHA_spiro_subj == "1-2", NYHA_spiro_subj_min != 1, NYHA_spiro_subj_max != 2)
+if(nrow(bad_nyha_range) > 0) {
+  stop("Bad NYHA range")
+}
+
+
+fit_boundaries_range_log <- brm(NYHA_spiro_subj_min | vint(NYHA_spiro_subj_max)  ~ log(VO2_max) , family = censored_cumulative(), stanvars = censored_cumulative_stanvars, data = data_nyha, file = here::here("stored_fits","boundaries_range_log"), file_refit = "on_change")
+```
+
+
+```{r}
+params <-  prepare_predictions(fit_boundaries_range_log)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$thres$thres
+use_levels <- 3
+threshold_samples <- array(-Inf, c(params$ndraws, use_levels))
+for(i in 1:use_levels) {
+  threshold_samples[,i] <- exp(threshold_raw[,i] / b)
+}
+threshold_samples[threshold_samples < -25] <- -25
+colnames(threshold_samples) <- paste0("NYHA ", 1:use_levels)
+predicted_thresholds <- as_tibble(threshold_samples)
+true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()  + expand_limits(y = 0.9)
+
+
+```   
+
+```{r}
+fit_boundaries_log <- brm(NYHA_spiro_subj ~ log(VO2_max), family = cumulative("logit"), data = data_nyha, file = here::here("stored_fits","boundaries_full_log"), file_refit = "on_change")
+```
+
+Nicméně s využitím tohoto modelu se můžeme zeptat: jaké prahy pro spiroergometrii by odpovídaly tomu, jak lékaři hodnotí NYHA subjektivně:
+
+```{r}
+params <-  prepare_predictions(fit_boundaries_log)
+b <- params$dpars$mu$fe$b[,1]
+threshold_raw <- params$thres$thres
+use_levels <- 5
+threshold_samples <- array(-Inf, c(params$ndraws, use_levels))
+for(i in 1:use_levels) {
+  threshold_samples[,i] <- exp(threshold_raw[,i] / b)
+}
+threshold_samples[threshold_samples < -25] <- -25
+colnames(threshold_samples) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro_subj)[1:use_levels])
+predicted_thresholds <- as_tibble(threshold_samples)
+true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), `Min. VO2max` = NYHA_VO2max_threshold)
+predicted_thresholds %>% gather("NYHA","Min. VO2max") %>%
+  ggplot(aes(x = `Min. VO2max`, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = `Min. VO2max`, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  geom_density()  # expand_limits(y = 0.9) +
+  #scale_x_continuous(breaks = log(seq(0, 30, by = 5)), labels = seq(0, 30, by = 5))
+
+
+```
