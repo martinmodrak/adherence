@@ -8,7 +8,7 @@
       },
       {
         "Name": "STAN",
-        "URL": "https://mc-stan.org/r-packages/"
+        "URL": "https://mc-stan.org/r-packages"
       }
     ]
   },
@@ -40,6 +40,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "a7d6660c869d4f41f856504828af4645"
+    },
+    "HDInterval": {
+      "Package": "HDInterval",
+      "Version": "0.2.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "3b986a53325a1d95610b8d86a284dac0"
     },
     "MASS": {
       "Package": "MASS",
@@ -102,7 +109,7 @@
       "Version": "2.26.4",
       "Source": "Repository",
       "Repository": "STAN",
-      "Hash": "ab5801a309a108b091f321719f7a7487"
+      "Hash": "15f611dad57ca4dd4adb6a57e1d6ed68"
     },
     "UpSetR": {
       "Package": "UpSetR",
@@ -124,6 +131,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "4f57884290cc75ab22f4af9e9d4ca862"
+    },
+    "arrayhelpers": {
+      "Package": "arrayhelpers",
+      "Version": "1.1-0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "3d4e52d458784c335af3846f2de64f75"
     },
     "askpass": {
       "Package": "askpass",
@@ -166,6 +180,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "9addc7e2c5954eca5719928131fed98c"
+    },
+    "bookdown": {
+      "Package": "bookdown",
+      "Version": "0.24",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "3837766a1e1b527af25fa3e2d12a2800"
     },
     "boot": {
       "Package": "boot",
@@ -268,7 +289,7 @@
       "RemoteUsername": "stan-dev",
       "RemoteRef": "HEAD",
       "RemoteSha": "0872512e534cf50efdb10998149ee6ae6eac0277",
-      "Hash": "74a690de79b40239dc4904d89acf62bb"
+      "Hash": "d3e221fb6cafea53c6b0e6d98ade17a1"
     },
     "coda": {
       "Package": "coda",
@@ -391,10 +412,10 @@
     },
     "distributional": {
       "Package": "distributional",
-      "Version": "0.2.2",
+      "Version": "0.3.0",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "046f2e782ce27c4d08b02e101aa5fee3"
+      "Hash": "1cba2656c1cab717a3ddea79664cc534"
     },
     "dplyr": {
       "Package": "dplyr",
@@ -500,6 +521,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "8612346a70ca2b2bebb0ef008d5c0e30"
+    },
+    "ggdist": {
+      "Package": "ggdist",
+      "Version": "3.1.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "5b03512755c82140b90a950a5ca72594"
     },
     "ggplot2": {
       "Package": "ggplot2",
@@ -756,7 +784,7 @@
       "RemoteUsername": "stan-dev",
       "RemoteRef": "HEAD",
       "RemoteSha": "c91f8be4018c6471e25166bbd67973081ca05688",
-      "Hash": "7de6144e7119b13bea3e703dacc9d68d"
+      "Hash": "b3418d6f9291a6bdc4e9193b039e2e25"
     },
     "lubridate": {
       "Package": "lubridate",
@@ -943,7 +971,7 @@
       "RemoteUsername": "stan-dev",
       "RemoteRef": "HEAD",
       "RemoteSha": "49fcd8e80140407b826aa5c592d31b5ed860a9af",
-      "Hash": "2a6968862c2b7096a3c4309ce2120faa"
+      "Hash": "3ccb7f82fc9a076f56a481e87cb4b89b"
     },
     "praise": {
       "Package": "praise",
@@ -1118,7 +1146,7 @@
       "Version": "2.26.1",
       "Source": "Repository",
       "Repository": "STAN",
-      "Hash": "db523572d4a85fc727d8b8c2cd497e39"
+      "Hash": "dd14b81c8739d70970144e5f30d606bc"
     },
     "rstantools": {
       "Package": "rstantools",
@@ -1232,6 +1260,13 @@
       "Repository": "CRAN",
       "Hash": "0759e6b6c0957edb1311028a49a35e76"
     },
+    "svUnit": {
+      "Package": "svUnit",
+      "Version": "1.0.6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "894d0aff9585344af4ab78e2b4d60ab7"
+    },
     "sys": {
       "Package": "sys",
       "Version": "3.4",
@@ -1266,6 +1301,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "349b40a9f144516d537c875e786ec8b8"
+    },
+    "tidybayes": {
+      "Package": "tidybayes",
+      "Version": "3.0.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "d501501261b724f35ec9f2b80f4421b5"
     },
     "tidyr": {
       "Package": "tidyr",
