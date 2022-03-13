@@ -74,6 +74,24 @@ if(nrow(data_wide) != nrow(data_wide_old)) {
 data_nyha <- data_wide %>% filter(!is.na(NYHA_spiro_subj), !is.na(VO2_max))
 ```
 
+One subject has two different NYHA subjective values from supposedly the same measurement.
+
+```{r}
+data_nyha %>% group_by(subject_id) %>% filter(n() > 1, length(unique(spiro_date)) == 1, length(unique(NYHA_spiro_subj)) != 1) %>% select(subject_id, VO2_max, NYHA_spiro_subj, spiro_date) %>%
+  arrange(subject_id)
+```
+
+
+```{r}
+# Remove duplicates
+data_nyha <- data_nyha %>% 
+  ungroup() %>%
+  group_by(subject_id) %>% 
+  filter(n() == 1 | length(unique(spiro_date)) == 2 | cohort == 2018) %>%
+  ungroup()
+```
+
+
 ## Definitions & summaries
 
 VO2 max is converted to NYHA score via the following table:
@@ -110,7 +128,8 @@ mean_iqr <- function(x) {
 rbind(data_nyha %>% mutate(adherence_category = "All"), data_nyha) %>%
   mutate(adherence_category = factor(adherence_category, levels = c("All", levels(data_nyha$adherence_category)))) %>%
   group_by(adherence_category) %>%
-  summarise(N = n(),
+  summarise(`N measurements` = n(),
+            `N subjects measured twice` = n() - length(unique(subject_id)), 
             Male =  sum_percent(sex == "M"),
             `Age (mean, IQR)` = mean_iqr(age),
             `EF (mean, IQR)` = mean_iqr(EF_numeric),
@@ -143,7 +162,7 @@ valid_tiles <- tribble(~NYHA_spiro_obj, ~NYHA_spiro_subj,
                        4, "4") %>%
   mutate(NYHA_spiro_subj = factor(NYHA_spiro_subj, levels = levels(data_nyha$NYHA_spiro_subj)))
          
-data_nyha %>%
+plot_scatter <-  data_nyha %>%
   ggplot(aes(y = as.integer(NYHA_spiro_subj), x = NYHA_spiro_obj, color = adherence_category, fill = adherence_category, group = adherence_category)) + 
   #geom_abline(slope = 2, intercept = -1) +
   #geom_smooth(formula = y ~ x, method = "lm", alpha = 0.15) + 
@@ -156,15 +175,22 @@ data_nyha %>%
   #expand_limits(x = exp_limits, y = exp_limits) +
   #coord_cartesian(ylim = c(1 - jitter_size - 0.1, 7 + jitter_size + 0.1)) +
   theme(panel.grid.minor = element_line(colour = "lightgray"))
+
+plot_scatter
 ```
 
+
+
+
 ```{r, fig.cap = "NYHA - as determined by VO2 max (horizontal) against subjective NYHA (vertical). Each subplot shows the counts of various adherence categories for the given combination of subjective and objective NYHA. Highlihted subplots suggest compatibility between the subjective and objective NYHA assesment."}
-data_nyha %>% 
+plot_bars <- data_nyha %>% 
   ggplot(aes(x = adherence_category, fill = adherence_category, color = adherence_category)) +
   geom_tile(data = valid_tiles, aes(x = "B - all but one", y = 10, width = 4, height = 22), inherit.aes = FALSE, fill = "orangered", alpha = 0.2) +
   stat_count() + facet_grid(NYHA_spiro_subj~NYHA_spiro_obj, labelle = ) + scale_color_adherence + scale_fill_adherence + scale_y_continuous("Count", breaks = c(0, 20)) + 
   scale_x_discrete("") +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+plot_bars
 
 ```
 
@@ -189,23 +215,25 @@ data_nyha %>%
 
 
 
+
+
 ```{r, fig.cap="Subjective NYHA class compared to VO2 max. Each dot is a patient.The thick light blue line shows expected output if NYHA based on VO2 max exactly corresponded with subjective NYHA. Lines show linear trends fitted to each adherence category and the associated 95% confidence interval."}
 step_data <- tibble(VO2_max = NYHA_VO2max_breaks, NYHA = factor(as.character(c(4:1,1)), levels = levels(data_nyha$NYHA_spiro_subj)))
                     
 theoretical_geom <- geom_step(aes(x = VO2_max, y = as.integer(NYHA)), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
-data_nyha %>%
+
+plot_VO2_max <- data_nyha %>%
   ggplot(aes(y = as.integer(NYHA_spiro_subj), x = VO2_max, color = adherence_category, fill=adherence_category)) + 
   theoretical_geom +
   geom_smooth(method = lm, formula = y ~ x, alpha = 0.15) +
   geom_jitter(width = 0, height = 0.1, alpha = 0.7) +
   scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
-  scale_color_brewer("Adherence", palette = brewer_palette_adherence) +
-  scale_fill_brewer("Adherence", palette = brewer_palette_adherence) +
+  scale_color_adherence +
+  scale_fill_adherence +
   scale_x_continuous("VO2 max [mg/ml/kg]", minor_breaks = NYHA_VO2max_breaks) +
-  # scale_y_continuous(minor_breaks = breaks, limits = exp_limits, oob = squish) +
-  #scale_color_manual(values = colors_adherence_skupina) +
   theme(panel.grid.minor.x = element_line(colour = "lightgray"))
 
+plot_VO2_max
 ```
 
 ```{r}
@@ -213,7 +241,29 @@ n_low_VO2_4 <- data_nyha %>% filter(VO2_max <= 10, NYHA_spiro_subj >= "3-4") %>%
 ```
 
 
-Importantly, despite seeing a large number of patients with VO2 max < 10, only `r n_low_VO2_4` of those patients have subjective NYHA 3-4 or 4. So it is clear that in that region, there is a major discrepancy between the two NYHA assesments.
+Importantly, despite seeing a large number of patients with VO2 max < 10, only `r n_low_VO2_4` of those patients have subjective NYHA 3-4 or 4. So it is clear that in that region, there is a major discrepancy between the two NYHA assessments.
+
+
+```{r, fig.cap = "Change in subjective NYHA and VO2 max for patients measured twice. Each arrow represents a single patient, it starts at the location corresponding to the first measurement and ends in the second measurement."}
+repeated_measurements <- data_nyha %>% group_by(subject_id) %>% filter(n() > 1)
+
+# repeated_measurements %>% select(subject_id, cohort, VO2_max, NYHA_spiro_subj) %>%
+#   rename(NYHA_subj = NYHA_spiro_subj) %>%
+#   pivot_wider(names_from = "cohort", values_from = c("VO2_max", "NYHA_subj"))
+  #summarise(VO2_max_1 = VO2_max[cohort == 2018], VO2_max_2 =  change_VO)
+
+repeated_measurements %>% arrange(subject_id, cohort) %>%
+  ggplot(aes(x = VO2_max, y = as.integer(NYHA_spiro_subj), group = subject_id)) +
+  theoretical_geom +
+  #geom_point(size = 2) + 
+  geom_path(arrow = arrow(length=unit(0.30,"cm"), type = "closed")) +
+  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) 
+
+```
+
+A small number of patients (`r length(unique(repeated_measurements$subject_id))`) was measured
+by spiroergometry twice. While most of the patients follow an expected trajectory of diesease progression (lower VO2 max and higher NYHA class at later measurement), we can also see patients that have improved their 
+subjective NYHA class, in one case even despite a noticeable decrease in VO2 max.
 
 ## Thresholds used by clinicians
 
@@ -259,7 +309,7 @@ if(nrow(bad_nyha_range) > 0) {
 
 
 fit_boundaries_range_log <- brm(NYHA_spiro_subj_min | vint(NYHA_spiro_subj_max)  ~ log(VO2_max) , family = censored_cumulative(), stanvars = censored_cumulative_stanvars, data = data_nyha,
-                                iter = 6000,
+                                iter = 6000, warmup = 2000,
                                 file = here::here("stored_fits","boundaries_range_log"), file_refit = "on_change")
 ```
 
@@ -308,7 +358,7 @@ We can also use a "full" model where even the "transitional" NYHA classes are us
 
 ```{r}
 fit_boundaries_log <- brm(NYHA_spiro_subj ~ log(VO2_max), family = cumulative("logit"), data = data_nyha, 
-                          iter = 6000,
+                          iter = 6000, warmup = 2000,
                           file = here::here("stored_fits","boundaries_full_log"), file_refit = "on_change")
 ```
 
@@ -397,7 +447,7 @@ We start by allowing a constant shift in the linear predictor (relative log-odds
 
 ```{r}
 fit_adherence <- brm(NYHA_spiro_subj ~ log(VO2_max) + mo(adherence_category), family = cumulative("logit"), data = data_nyha,
-                     iter = 6000,
+                     iter = 6000, warmup = 2000,
                      file = here::here("stored_fits","nyha_adherence"), file_refit = "on_change") 
 ```
 
@@ -420,7 +470,7 @@ Further we can allow not only a constant shift, but also let the slope of the as
 
 ```{r}
 fit_adherence_int <- brm(NYHA_spiro_subj ~ log(VO2_max) * mo(adherence_category), family = cumulative("logit"), data = data_nyha, 
-                         iter = 6000,
+                         iter = 6000, warmup = 2000,
                          file = here::here("stored_fits","nyha_adherence_int"), file_refit = "on_change") 
 ```
 
@@ -444,6 +494,65 @@ as_draws(fit_adherence_int) %>%
 
 
 Similarly to the constant shift model the results from the interaction model are not very conclusive: we cannot determine the sign of change in either the constant shift or change in slope and the data are consistent with very similar association in adherent and non-adherent categories, as well as with substantial differences. 
+
+## Cohort differences?
+
+Here we repeat some of the plots, but split by cohort:
+
+```{r}
+plot_scatter + facet_wrap(~cohort)
+```
+
+```{r}
+data_nyha %>% 
+  rowwise() %>%
+  mutate(`NYHA status` = 
+           case_when(grepl(NYHA_spiro_obj, as.character(NYHA_spiro_subj)) ~ "Concordant",
+                     NYHA_spiro_obj < as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective lower",
+                     NYHA_spiro_obj > as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective higher",
+                     TRUE ~ "Invalid")) %>%
+  # filter(`NYHA status` == "Objective higher") %>%
+  # select(NYHA_spiro_obj, NYHA_spiro_subj)
+  
+  group_by(cohort, `NYHA status`) %>% tally() %>%
+  knitr::kable(caption = "Count of patients based on difference between subjective NYHA and NYHA based on VO2 max, split by cohort")
+```
+
+
+```{r}
+plot_VO2_max + facet_wrap(~cohort)
+```
+
+There doesn't appear to be any obvious difference.
+
+
+```{r}
+fit_boundaries_cohort_log <- brm(NYHA_spiro_subj ~ log(VO2_max) + factor(cohort), family = cumulative("logit"), data = data_nyha, 
+                          iter = 6000, warmup = 2000,
+                          file = here::here("stored_fits","boundaries_full_cohort_log"), file_refit = "on_change")
+```
+
+We can also try to include cohort in the statistical model. The results are inconclusive --- there is no evidence for a difference between the two cohorts, but unfortunately, we also cannot rule out a relatively big difference.
+
+```{r}
+summary(fit_boundaries_cohort_log)
+```
+
+
+## Main conclusions
+
+```{r}
+vo2max_25 <- data_nyha %>% ungroup() %>% filter(VO2_max >= 25) %>% summarise(N = n(), NYHA_1 = sum(NYHA_spiro_subj == "1"), NYHA_1_2 = sum(NYHA_spiro_subj == "1-2"),   NYHA_2 = sum(NYHA_spiro_subj == "2"))
+```
+
+
+- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 mg/ml/kg, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
+
+- Subjective NYHA 4 is almost unseen in the data - maybe patients with NYHA 4 were effectively excluded due to not being able to perform spiroergometry?
+
+- If a better match between NYHA derived from spiroergometry in this dataset and subjective NYHA was desired, the upper VO2 max thresholds for NYHA 3 and 4 would need to be moved down substantially. 
+
+- With the current data, we cannot say anything conclusive about the potential change of association between subjective and objective NYHA between adherent and non-adherent patient subgroups. This is primarily due to the low number of non-adherent patients observed in the cohort.
 
 ## Reproducibility
 
