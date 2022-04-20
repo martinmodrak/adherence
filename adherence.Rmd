@@ -15,6 +15,17 @@ library(ggdist)
 
 knitr::opts_chunk$set(echo=FALSE)
 
+document_output <- isTRUE(getOption('knitr.in.progress'))
+
+if(document_output) {
+  table_format <- function(x, caption = NULL, align = NULL) { 
+    knitr::kable(x, caption = caption, align = align) 
+  }
+} else {
+  table_format <- function(x, caption = NULL, align = NULL) { x }
+}
+
+
 options(mc.cores = 4, brms.backend = "cmdstanr", dplyr.summarise.inform = FALSE)
 cache_dir <- here::here("stored_fits")
 if(!dir.exists(cache_dir)) {
