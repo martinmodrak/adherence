@@ -149,7 +149,13 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
            lab_NT_proBNP = as.numeric(if_else(lab_NT_proBNP == "> 35000,0", "36000", as.character(lab_NT_proBNP))),
 
            VO2_max = as.numeric(if_else(VO2_max == "6,5 (technick\u00e1 chyba)", NA_character_, as.character(VO2_max))),
-           questionnaire_4 = as.numeric(if_else(questionnaire_4 == "neodpov\u011bd\u011bl", NA_character_, as.character(questionnaire_4)))
+           questionnaire_4 = as.numeric(if_else(questionnaire_4 == "neodpov\u011bd\u011bl", NA_character_, as.character(questionnaire_4))),
+           is_iKMP = grepl("iKMP", diagnosis, ignore.case = TRUE),
+           is_dKMP = grepl("dKMP", diagnosis, ignore.case = TRUE),
+           diagnosis_group = case_when(is_iKMP & is_dKMP ~ "iKMP_dKMP",
+                                       is_iKMP ~ "iKMP",
+                                       is_dKMP ~ "dKMP",
+                                       TRUE ~ "Other")
            )
 
 

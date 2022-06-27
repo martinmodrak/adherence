@@ -117,13 +117,12 @@ data.frame(
 ```
 
 
-We use 3 categories of adherence:
+We use 2 categories of adherence:
 
 - "all", when adherent to all drugs prescribed that can be measured
-- "all but one" when prescribed more than one drug and not adherent to at most one drug
 - "nonadherent" otherwise
 
-In all cases, we don't take into account adherence to furosemide.
+In both cases, we don't take into account adherence to furosemide.
 
 ```{r}
 sum_percent <- function(x) {
@@ -146,11 +145,22 @@ data_groups %>%
             `Diabetes` = sum_percent(diabetes == 1),
             `EF (mean, IQR)` = mean_iqr(EF_numeric),
             `NT-proBNP [pg/ml] (mean, IQR)` = mean_iqr(lab_NT_proBNP),
+            `Diagnosis - iKMP only` = sum_percent(diagnosis_group == "iKMP"),
+            `Diagnosis - dKMP only` = sum_percent(diagnosis_group == "dKMP"),
+            `Diagnosis - iKMP and dKMP` = sum_percent(diagnosis_group == "iKMP_dKMP"),
+            `Diagnosis - Other` = sum_percent(diagnosis_group == "Other")
+            
             
 ) %>%
   column_to_rownames("adherence_category") %>% t() %>%
   as.data.frame() %>% table_format(caption = "Summary of the characteristics of the patients enrolled, grouped by adherence category.") 
 ```
+The "Other" diagnosis includes:
+
+```{r}
+data_nyha %>% filter(diagnosis_group == "Other") %>% select(diagnosis) %>% table_format()
+```
+
 
 ```{r}
 data_groups %>%
@@ -182,19 +192,11 @@ data_groups %>%
   as.data.frame() %>% table_format(caption = "Summary of the drugs taken by the patients enrolled, grouped by adherence category.") 
 ```
 
-```{r}
-data_groups %>% group_by(adherence_category, diagnosis) %>% summarise(count = n(), .groups = "drop_last") %>%
-  mutate(percent = scales::percent(count / sum(count)), count_percent = paste0(count, " (", percent, ")")) %>%
-  arrange(adherence_category, desc(count), diagnosis) %>%
-  select(adherence_category, diagnosis, count_percent) %>%
-  table_format(caption = "Diagnosis by adherece category")
-```
-
-
 We see that vast majority of patients was fully adherent (if we ignore furosemide, which has generally low adherence, but is not expected to be taken continuously).
 
 ```{r}
-
+data_nyha %>% filter(!grepl("ikmp", diagnosis, ignore.case = TRUE), !grepl("dkmp", diagnosis, ignore.case = TRUE)) %>%
+  pull(diagnosis)
 ```
 
 
