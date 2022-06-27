@@ -161,6 +161,24 @@ The "Other" diagnosis includes:
 data_nyha %>% filter(diagnosis_group == "Other") %>% select(diagnosis) %>% table_format()
 ```
 
+The number of patients per objective NYHA class:
+
+```{r}
+t_nyha_obj <- table(data_nyha$NYHA_spiro_obj)
+if(any(is.na(data_nyha$NYHA_spiro_obj))) {
+  stop("Unhandled NA")
+}
+tibble(`Objective NYHA` = paste0("NYHA ", 1:4), N = paste0(t_nyha_obj, " (", scales::percent(as.numeric(t_nyha_obj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
+
+```
+
+Mean VO2 peak per subjective NYHA class
+
+```{r}
+data_nyha %>% group_by(NYHA_spiro_subj) %>%
+  summarise(N = n(), `Mean VO2 peak` = mean(VO2_max), `SD VO2 peak` = sd(VO2_max))
+```
+
 
 ```{r}
 data_groups %>%
@@ -428,8 +446,8 @@ One way to quantify this in a single number is to note that in our whole data, V
 We can integrate those two views in one somewhat complex plot below:
 
 ```{r}
-predicted_thresholds %>% filter(sample %in% sample.int(n = 6000, size = 100)) %>%
-  ggplot(aes( x = min_VO2_max, y = NYHA)) + ggdist::stat_interval(color = "black", aes(color_ramp = stat(level)), interval_size = 10) + scale_color_nyha
+# predicted_thresholds %>% filter(sample %in% sample.int(n = 6000, size = 100)) %>%
+#   ggplot(aes( x = min_VO2_max, y = NYHA)) + ggdist::stat_interval(color = "black", aes(color_ramp = stat(level)), interval_size = 10) + scale_color_nyha
 ```
 
 
@@ -618,7 +636,7 @@ vo2max_25 <- data_nyha %>% ungroup() %>% filter(VO2_max >= 25) %>% summarise(N =
 ```
 
 
-- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 mg/ml/kg, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
+- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 mg/ml/kg, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25$NYHA_2` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
 
 - Subjective NYHA 4 is almost unseen in the data - maybe patients with NYHA 4 were effectively excluded due to not being able to perform spiroergometry?
 
