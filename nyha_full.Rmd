@@ -168,7 +168,7 @@ t_nyha_obj <- table(data_nyha$NYHA_spiro_obj)
 if(any(is.na(data_nyha$NYHA_spiro_obj))) {
   stop("Unhandled NA")
 }
-tibble(`Objective NYHA` = paste0("NYHA ", 1:4), N = paste0(t_nyha_obj, " (", scales::percent(as.numeric(t_nyha_obj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
+tibble(`Objective NYHA` = paste0("NYHA ", 1:4), N = as.numeric(t_nyha_obj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_obj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
 
 ```
 
@@ -179,7 +179,7 @@ t_nyha_subj <- table(data_nyha$NYHA_spiro_subj)
 if(any(is.na(data_nyha$NYHA_spiro_subj))) {
   stop("Unhandled NA")
 }
-tibble(`Subjective NYHA` = paste0("NYHA ", names(t_nyha_subj)), N = paste0(t_nyha_subj, " (", scales::percent(as.numeric(t_nyha_subj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
+tibble(`Subjective NYHA` = paste0("NYHA ", names(t_nyha_subj)), N = as.numeric(t_nyha_subj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_subj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
 ```
 
 Mean VO2 peak per subjective NYHA class
