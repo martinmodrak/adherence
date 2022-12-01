@@ -311,7 +311,7 @@ step_data <- tibble(VO2_max = NYHA_VO2max_breaks, NYHA = factor(as.character(c(4
                     
 theoretical_geom <- geom_step(aes(x = VO2_max, y = as.integer(NYHA)), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
 
-scale_x_VO2 <- scale_x_continuous("VO2 peak [mg/ml/kg]", minor_breaks = NYHA_VO2max_breaks)
+scale_x_VO2 <- scale_x_continuous("VO2 peak [ml/kg/min]", minor_breaks = NYHA_VO2max_breaks)
 
 plot_VO2_max <- data_nyha %>%
   ggplot(aes(y = as.integer(NYHA_spiro_subj), x = VO2_max, color = adherence_category, fill=adherence_category)) + 
@@ -532,7 +532,7 @@ plot_fitted_trend <- function(fit, adherence = FALSE, ndraws = 100) {
     ggplot(aesthetics) +
     theoretical_geom +
     geom_line(aes(group = group), alpha = 0.3) + 
-    scale_x_continuous("VO2 peak [mg/ml/kg]", minor_breaks = NYHA_VO2max_breaks) +
+    scale_x_continuous("VO2 peak [ml/kg/min]", minor_breaks = NYHA_VO2max_breaks) +
     scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
     scale_color_adherence +
     expand_limits(y = ncategories) +
@@ -646,7 +646,7 @@ vo2max_25 <- data_nyha %>% ungroup() %>% filter(VO2_max >= 25) %>% summarise(N =
 ```
 
 
-- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 mg/ml/kg, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25$NYHA_2` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
+- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 ml/kg/min, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25$NYHA_2` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
 
 - Subjective NYHA 4 is almost unseen in the data - maybe patients with NYHA 4 were effectively excluded due to not being able to perform spiroergometry?
 
@@ -656,7 +656,7 @@ vo2max_25 <- data_nyha %>% ungroup() %>% filter(VO2_max >= 25) %>% summarise(N =
 
 ## Reproducibility
 
-Full code to reproduce this report can be found at https://github.com/martinmodrak/adherence/blob/master/nyha_full.Rmd (not public yet).
+Full code to reproduce this report is part of the supplementary material.
 
 Packages used:
 
