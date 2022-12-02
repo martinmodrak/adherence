@@ -1,5 +1,5 @@
 ---
-title: "NYHA subjective vs. objective"
+title: "Supplementary material for: Relationship Between Objective and Subjective Assessment of Functional Capacity in Patients with Chronic Heart Failure and its Dependence on Medication Adherence"
 output: 
   bookdown::word_document2: 
     toc: false
@@ -37,20 +37,22 @@ theme_set(cowplot::theme_cowplot())
 devtools::load_all()
 
 source(here::here("data_into_session.R"))
+data_wide <- data_wide %>% rename(Weber_spiro = NYHA_spiro_obj, NYHA_spiro = NYHA_spiro_subj, VO2_peak = VO2_max)
+data_long <- data_long %>% rename(Weber_spiro = NYHA_spiro_obj, NYHA_spiro = NYHA_spiro_subj, VO2_peak = VO2_max)
 ```
 
 ```{r}
-NYHA_VO2max_threshold = c(10, 16, 20)
-NYHA_VO2max_breaks = c(min(data_wide$VO2_max, na.rm = TRUE)-0.01, 10-1e-6, 16, 20+1e-6, max(data_wide$VO2_max, na.rm = TRUE) + 0.1)
+NYHA_VO2_peak_threshold = c(10, 16, 20)
+NYHA_VO2_peak_breaks = c(min(data_wide$VO2_peak, na.rm = TRUE)-0.01, 10-1e-6, 16, 20+1e-6, max(data_wide$VO2_peak, na.rm = TRUE) + 0.1)
 data_wide <- data_wide %>% 
-  mutate(NYHA_spiro_obj_manual = NYHA_spiro_obj,
-         NYHA_spiro_obj = VO2_max %>% cut(NYHA_VO2max_breaks, labels = 4:1, right = FALSE) %>% as.character() %>% as.integer())
+  mutate(Weber_spiro_manual = Weber_spiro,
+         Weber_spiro = VO2_peak %>% cut(NYHA_VO2_peak_breaks, labels = 4:1, right = FALSE) %>% as.character() %>% as.integer())
 
 # Subjects 113 and 41 have verified mismatch, where calculated value should be preferred
-mismatched_NYHA <- data_wide %>% filter((NYHA_spiro_obj_manual != NYHA_spiro_obj & !is.na(NYHA_spiro_obj)) | 
-                       is.na(NYHA_spiro_obj) & !is.na(NYHA_spiro_obj),
+mismatched_NYHA <- data_wide %>% filter((Weber_spiro_manual != Weber_spiro & !is.na(Weber_spiro)) | 
+                       is.na(Weber_spiro) & !is.na(Weber_spiro),
                        !(subject_id %in% c(113, 41)))  %>% 
-  select(subject_id, cohort, NYHA_spiro_obj, NYHA_spiro_obj_manual, VO2_max)
+  select(subject_id, cohort, Weber_spiro, Weber_spiro_manual, VO2_peak)
 
 if(nrow(mismatched_NYHA) > 0) {
   stop("Mismatched NYHA")
@@ -80,14 +82,15 @@ if(nrow(data_wide) != nrow(data_wide_old)) {
   stop("Bad join")
 }
 
-data_nyha <- data_wide %>% filter(!is.na(NYHA_spiro_subj), !is.na(VO2_max))
+data_nyha <- data_wide %>% filter(!is.na(NYHA_spiro), !is.na(VO2_peak))
 ```
 
-One subject has two different NYHA subjective values from supposedly the same measurement.
 
 ```{r}
-data_nyha %>% group_by(subject_id) %>% filter(n() > 1, length(unique(spiro_date)) == 1, length(unique(NYHA_spiro_subj)) != 1) %>% select(subject_id, VO2_max, NYHA_spiro_subj, spiro_date) %>%
-  arrange(subject_id) %>% table_format()
+# One subject has two different NYHA values from supposedly the same measurement.
+# Check:
+# data_nyha %>% group_by(subject_id) %>% filter(n() > 1, length(unique(spiro_date)) == 1, length(unique(NYHA_spiro)) != 1) %>% select(subject_id, VO2_peak, NYHA_spiro, spiro_date) %>%
+#  arrange(subject_id) %>% table_format()
 ```
 
 
@@ -103,16 +106,16 @@ data_nyha <- data_nyha %>%
 
 ## Definitions & summaries
 
-VO2 max is converted to NYHA score via the following table:
+VO~2~ peak is converted to Weber via the following table:
 
 ```{r}
 data.frame( 
-           `VO2 max [ml/kg/min]` = c(
-             paste0("< ", NYHA_VO2max_threshold[1]),
-             paste0(NYHA_VO2max_threshold[1], " - ", NYHA_VO2max_threshold[2]),
-             paste0(NYHA_VO2max_threshold[2], " - ", NYHA_VO2max_threshold[3]),
-             paste0("> ", NYHA_VO2max_threshold[3])
-           ), `NYHA level` = paste0("NYHA ", 4:1), check.names = FALSE)  %>% 
+           `VO~2~ peak [ml/kg/min]` = c(
+             paste0("< ", NYHA_VO2_peak_threshold[1]),
+             paste0(NYHA_VO2_peak_threshold[1], " - ", NYHA_VO2_peak_threshold[2]),
+             paste0(NYHA_VO2_peak_threshold[2], " - ", NYHA_VO2_peak_threshold[3]),
+             paste0("> ", NYHA_VO2_peak_threshold[3])
+           ), `Weber class` = LETTERS[4:1], check.names = FALSE)  %>% 
   table_format()
 ```
 
@@ -155,38 +158,41 @@ data_groups %>%
   column_to_rownames("adherence_category") %>% t() %>%
   as.data.frame() %>% table_format(caption = "Summary of the characteristics of the patients enrolled, grouped by adherence category.") 
 ```
+
 The "Other" diagnosis includes:
 
 ```{r}
 data_nyha %>% filter(diagnosis_group == "Other") %>% select(diagnosis) %>% table_format()
 ```
 
-The number of patients per objective NYHA class:
+The number of patients per Weber class:
 
 ```{r}
-t_nyha_obj <- table(data_nyha$NYHA_spiro_obj)
-if(any(is.na(data_nyha$NYHA_spiro_obj))) {
+t_nyha_obj <- table(data_nyha$Weber_spiro)
+if(any(is.na(data_nyha$Weber_spiro))) {
   stop("Unhandled NA")
 }
-tibble(`Objective NYHA` = paste0("NYHA ", 1:4), N = as.numeric(t_nyha_obj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_obj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
+tibble(`Weber` = LETTERS[1:4], N = as.numeric(t_nyha_obj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_obj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
 
 ```
 
-The number of patients per subjective NYHA class:
+The number of patients per NYHA class:
 
 ```{r}
-t_nyha_subj <- table(data_nyha$NYHA_spiro_subj)
-if(any(is.na(data_nyha$NYHA_spiro_subj))) {
+t_nyha_subj <- table(data_nyha$NYHA_spiro)
+if(any(is.na(data_nyha$NYHA_spiro))) {
   stop("Unhandled NA")
 }
-tibble(`Subjective NYHA` = paste0("NYHA ", names(t_nyha_subj)), N = as.numeric(t_nyha_subj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_subj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
+tibble(`NYHA` = paste0("NYHA ", names(t_nyha_subj)), N = as.numeric(t_nyha_subj), `%` = paste0("(", scales::percent(as.numeric(t_nyha_subj) / nrow(data_nyha), accuracy = 1), ")")) %>% table_format()
 ```
 
-Mean VO2 peak per subjective NYHA class
+Mean VO~2~ peak per NYHA class
 
 ```{r}
-data_nyha %>% group_by(NYHA_spiro_subj) %>%
-  summarise(N = n(), `Mean VO2 peak` = mean(VO2_max), `SD VO2 peak` = sd(VO2_max))
+data_nyha %>% group_by(NYHA_spiro) %>%
+  summarise(N = n(), `Mean VO~2~ peak` = mean(VO2_peak), `SD VO~2~ peak` = sd(VO2_peak)) %>% 
+  rename(NYHA = NYHA_spiro) %>%
+  table_format()
 ```
 
 
@@ -223,21 +229,21 @@ data_groups %>%
 We see that vast majority of patients was fully adherent (if we ignore furosemide, which has generally low adherence, but is not expected to be taken continuously).
 
 ```{r}
-data_nyha %>% filter(!grepl("ikmp", diagnosis, ignore.case = TRUE), !grepl("dkmp", diagnosis, ignore.case = TRUE)) %>%
-  pull(diagnosis)
+# data_nyha %>% filter(!grepl("ikmp", diagnosis, ignore.case = TRUE), !grepl("dkmp", diagnosis, ignore.case = TRUE)) %>%
+#   pull(diagnosis)
 ```
 
 
 ## Visualising the data
 
-```{r, fig.cap="NYHA - as determined by VO2 max against subjective NYHA. Each dot is a patient. Highlihted regions suggest compatibility between the subjective and objective NYHA assesment. Position of the dots within each region is random."}
+```{r, fig.cap="Weber - as determined by VO~2~ peak against NYHA. Each dot is a patient. Highlihted regions suggest compatibility between the NYHA and Weber class. Position of the dots within each region is random."}
 brewer_palette_adherence <- "Set1"
 scale_color_adherence <- scale_color_brewer("Adherence", palette = brewer_palette_adherence)
 scale_fill_adherence <- scale_fill_brewer("Adherence", palette = brewer_palette_adherence)
 
 jitter_size <- 0.3
 exp_limits <- c(1 - jitter_size - 0.1, 4 + jitter_size + 0.1)
-valid_tiles <- tribble(~NYHA_spiro_obj, ~NYHA_spiro_subj,
+valid_tiles <- tribble(~Weber_spiro, ~NYHA_spiro,
                        1, "1",
                        1, "1-2",
                        2, "1-2",
@@ -248,19 +254,20 @@ valid_tiles <- tribble(~NYHA_spiro_obj, ~NYHA_spiro_subj,
                        3, "3-4",
                        4, "3-4",
                        4, "4") %>%
-  mutate(NYHA_spiro_subj = factor(NYHA_spiro_subj, levels = levels(data_nyha$NYHA_spiro_subj)))
+  mutate(NYHA_spiro = factor(NYHA_spiro, levels = levels(data_nyha$NYHA_spiro)))
          
 plot_scatter <-  data_nyha %>%
-  ggplot(aes(y = as.integer(NYHA_spiro_subj), x = NYHA_spiro_obj, color = adherence_category, fill = adherence_category,
+  ggplot(aes(y = as.integer(NYHA_spiro), x = Weber_spiro, color = adherence_category, fill = adherence_category,
              shape = adherence_category, group = adherence_category)) + 
   #geom_abline(slope = 2, intercept = -1) +
   #geom_smooth(formula = y ~ x, method = "lm", alpha = 0.15) + 
-  geom_tile(data = valid_tiles, aes(y = as.integer(NYHA_spiro_subj), x = NYHA_spiro_obj), inherit.aes = FALSE, fill = "orangered", alpha = 0.2) +
+  geom_tile(data = valid_tiles, aes(y = as.integer(NYHA_spiro), x = Weber_spiro), inherit.aes = FALSE, fill = "orangered", alpha = 0.2) +
   geom_jitter(width = jitter_size, height = jitter_size, size = 1, alpha = 0.7) +
-  scale_x_continuous("NYHA from VO2 max", minor_breaks = 2:4 - 0.5) +
-  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+  scale_x_continuous(expression(paste("Weber from ", VO[2], " peak")), minor_breaks = 2:4 - 0.5, breaks = 1:4, labels = LETTERS[1:4]) +
+  scale_y_continuous("NYHA", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro)) +
   scale_color_adherence +
   scale_fill_adherence +
+  scale_shape_discrete("Adherence") +
   #expand_limits(x = exp_limits, y = exp_limits) +
   #coord_cartesian(ylim = c(1 - jitter_size - 0.1, 7 + jitter_size + 0.1)) +
   theme(panel.grid.minor = element_line(colour = "lightgray"))
@@ -271,11 +278,11 @@ plot_scatter
 
 
 
-```{r, fig.cap = "NYHA - as determined by VO2 max (horizontal) against subjective NYHA (vertical). Each subplot shows the counts of various adherence categories for the given combination of subjective and objective NYHA. Highlihted subplots suggest compatibility between the subjective and objective NYHA assesment."}
+```{r, fig.cap = "Weber - as determined by VO~2~ peak (horizontal) against NYHA (vertical). Each subplot shows the counts of various adherence categories for the given combination of Weber and NYHA. Highlihted subplots suggest compatibility between the NYHA and Weber class."}
 plot_bars <- data_nyha %>% 
   ggplot(aes(x = adherence_category, fill = adherence_category, color = adherence_category)) +
   geom_tile(data = valid_tiles, aes(x = "Fully adherent", y = 10, width = 3, height = 22), inherit.aes = FALSE, fill = "orangered", alpha = 0.2) +
-  stat_count() + facet_grid(NYHA_spiro_subj~NYHA_spiro_obj) + scale_color_adherence + scale_fill_adherence + scale_y_continuous("Count", breaks = c(0, 20)) + 
+  stat_count() + facet_grid(NYHA_spiro~LETTERS[Weber_spiro]) + scale_color_adherence + scale_fill_adherence + scale_y_continuous("Count", breaks = c(0, 20)) + 
   scale_x_discrete("", limits = c("Nonadherent", "Fully adherent")) +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
@@ -283,22 +290,22 @@ plot_bars
 
 ```
 
-In both variants of the plots we see that there is substantial number of patients for whom the subjective and objective NYHA are discordant. But substantially more frequently we see the "objective" NYHA based on VO2 max to be higher than the subjective one. In the extreme a single patient considered subjectively as NYHA 1 had objective NYHA 4.
+In both variants of the plots we see that there is substantial number of patients for whom the NYHA and Weber are discordant. But substantially more frequently we see the "objective" Weber based on VO~2~ peak to be higher than NYHA. In the extreme a single patient considered subjectively as NYHA 1 had Weber D.
 
 
 ```{r}
 data_nyha %>% 
   rowwise() %>%
-  mutate(`NYHA status` = 
-           case_when(grepl(NYHA_spiro_obj, as.character(NYHA_spiro_subj)) ~ "Concordant",
-                     NYHA_spiro_obj < as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective lower",
-                     NYHA_spiro_obj > as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective higher",
+  mutate(`NYHA vs. Weber status` = 
+           case_when(grepl(Weber_spiro, as.character(NYHA_spiro)) ~ "Concordant",
+                     Weber_spiro < as.integer(substr(NYHA_spiro, 1, 1)) ~ "Weber lower",
+                     Weber_spiro > as.integer(substr(NYHA_spiro, 1, 1)) ~ "Weber higher",
                      TRUE ~ "Invalid")) %>%
   # filter(`NYHA status` == "Objective higher") %>%
-  # select(NYHA_spiro_obj, NYHA_spiro_subj)
+  # select(Weber_spiro, NYHA_spiro)
   
-  group_by(`NYHA status`) %>% tally() %>%
-  table_format(caption = "Count of patients based on difference between subjective NYHA and NYHA based on VO2 max")
+  group_by(`NYHA vs. Weber status`) %>% tally() %>%
+  table_format(caption = "Count of patients based on difference between NYHA and Weber based on VO~2~ peak")
                                                
 ```
 
@@ -306,79 +313,81 @@ data_nyha %>%
 
 
 
-```{r, fig.cap="Subjective NYHA class compared to VO2 max. Each dot is a patient.The thick light blue line shows expected output if NYHA based on VO2 max exactly corresponded with subjective NYHA. Lines show linear trends fitted to each adherence category and the associated 95% confidence interval."}
-step_data <- tibble(VO2_max = NYHA_VO2max_breaks, NYHA = factor(as.character(c(4:1,1)), levels = levels(data_nyha$NYHA_spiro_subj)))
+```{r, fig.cap="NYHA class compared to VO~2~ peak. Each dot is a patient.The thick light blue line shows expected output if Weber based on VO~2~ peak exactly corresponded with NYHA. Lines show linear trends fitted per each adherence category and the associated 95% confidence interval."}
+step_data <- tibble(VO2_peak = NYHA_VO2_peak_breaks, NYHA = factor(as.character(c(4:1,1)), levels = levels(data_nyha$NYHA_spiro)))
                     
-theoretical_geom <- geom_step(aes(x = VO2_max, y = as.integer(NYHA)), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
+theoretical_geom <- geom_step(aes(x = VO2_peak, y = as.integer(NYHA)), data = step_data, inherit.aes = FALSE, color = "lightblue", size = 2)
 
-scale_x_VO2 <- scale_x_continuous("VO2 peak [ml/kg/min]", minor_breaks = NYHA_VO2max_breaks)
+#scale_x_VO2 <- scale_x_continuous("VO2 peak [ml/kg/min]", minor_breaks = NYHA_VO2_peak_breaks)
+vo2_label <- expression(paste(VO[2],  " peak [ml/kg/min]"))
+scale_x_VO2 <- scale_x_continuous(vo2_label, minor_breaks = NYHA_VO2_peak_breaks)
 
-plot_VO2_max <- data_nyha %>%
-  ggplot(aes(y = as.integer(NYHA_spiro_subj), x = VO2_max, color = adherence_category, fill=adherence_category)) + 
+plot_VO2_peak <- data_nyha %>%
+  ggplot(aes(y = as.integer(NYHA_spiro), x = VO2_peak, color = adherence_category, fill=adherence_category)) + 
   theoretical_geom +
   geom_smooth(method = lm, formula = y ~ x, alpha = 0.15) +
   geom_jitter(width = 0, height = 0.1, alpha = 0.7) +
-  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+  scale_y_continuous("NYHA", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro)) +
   scale_color_adherence +
   scale_fill_adherence +
   scale_x_VO2 +
   theme(panel.grid.minor.x = element_line(colour = "lightgray"))
 
-plot_VO2_max
+plot_VO2_peak
 ```
 
 ```{r}
-n_low_VO2_4 <- data_nyha %>% filter(VO2_max <= 10, NYHA_spiro_subj >= "3-4") %>% nrow()
+n_low_VO2_4 <- data_nyha %>% filter(VO2_peak <= 10, NYHA_spiro >= "3-4") %>% nrow()
 ```
 
 
-Importantly, despite seeing a large number of patients with VO2 max < 10, only `r n_low_VO2_4` of those patients have subjective NYHA 3-4 or 4. So it is clear that in that region, there is a major discrepancy between the two NYHA assessments.
+Importantly, despite seeing a large number of patients with VO~2~ peak < 10, only `r n_low_VO2_4` of those patients have NYHA 3-4 or 4. So it is clear that in that region, there is a major discrepancy between the two assessments.
 
-Additionally we see that the range of VO2 peak values for NYHA 1 up to NYHA 2 is almost identical. 
+Additionally we see that the range of VO~2~ peak values for NYHA 1 up to NYHA 2 is almost identical. 
 
 
-```{r, fig.cap = "Change in subjective NYHA and VO2 max for patients measured twice. Each arrow represents a single patient, it starts at the location corresponding to the first measurement and ends in the second measurement."}
+```{r, fig.cap = "Change in NYHA and VO~2~ peak for patients measured twice. Each arrow represents a single patient, it starts at the location corresponding to the first measurement and ends in the second measurement."}
 repeated_measurements <- data_nyha %>% group_by(subject_id) %>% filter(n() > 1)
 
-# repeated_measurements %>% select(subject_id, cohort, VO2_max, NYHA_spiro_subj) %>%
-#   rename(NYHA_subj = NYHA_spiro_subj) %>%
-#   pivot_wider(names_from = "cohort", values_from = c("VO2_max", "NYHA_subj"))
-  #summarise(VO2_max_1 = VO2_max[cohort == 2018], VO2_max_2 =  change_VO)
+# repeated_measurements %>% select(subject_id, cohort, VO2_peak, NYHA_spiro) %>%
+#   rename(NYHA_subj = NYHA_spiro) %>%
+#   pivot_wider(names_from = "cohort", values_from = c("VO2_peak", "NYHA_subj"))
+  #summarise(VO2_peak_1 = VO2_peak[cohort == 2018], VO2_peak_2 =  change_VO)
 
 repeated_measurements %>% arrange(subject_id, cohort) %>%
-  ggplot(aes(x = VO2_max, y = as.integer(NYHA_spiro_subj), group = subject_id)) +
+  ggplot(aes(x = VO2_peak, y = as.integer(NYHA_spiro), group = subject_id)) +
   theoretical_geom +
   #geom_point(size = 2) + 
   geom_path(arrow = arrow(length=unit(0.30,"cm"), type = "closed")) +
-  scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj))  +
-  scale_x_continuous("VO2 peak")
+  scale_y_continuous("NYHA", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro))  +
+  scale_x_continuous(vo2_label)
 
 ```
 
 A small number of patients (`r length(unique(repeated_measurements$subject_id))`) was measured
-by spiroergometry twice. While most of the patients follow an expected trajectory of diesease progression (lower VO2 max and higher NYHA class at later measurement), we can also see patients that have improved their 
-subjective NYHA class, in one case even despite a noticeable decrease in VO2 max.
+by spiroergometry twice. While most of the patients follow an expected trajectory of diesease progression (lower VO~2~ peak and higher NYHA class at later measurement), we can also see patients that have improved their 
+ NYHA class, in one case even despite a noticeable decrease in VO~2~ peak.
 
 ## Thresholds used by clinicians
 
-We can try to find thresholds on VO2 max that would mimic clinicians decisions in subjective NYHA the best.
-To achieve that we use a cumulative ordinal model with a logit link. Briefly, the model assumes that the subjective NYHA classification arises by a clinician noisily observing a quantity proportional to VO2 max and then putting thresholds on this noisy observation. For mathematical convenience we use the logarithm of VO2 max (the results are however very similar when using VO2 max directly).
+We can try to find thresholds on VO~2~ peak that would mimic clinicians decisions in NYHA the best.
+To achieve that we use a cumulative ordinal model with a logit link. Briefly, the model assumes that the NYHA classification arises by a clinician noisily observing a quantity proportional to VO~2~ peak and then putting thresholds on this noisy observation. For mathematical convenience we use the logarithm of VO~2~ peak (the results are however very similar when using VO~2~ peak directly).
 
 
 
-We use a model including the "transitional" NYHA classes and thresholds corresponding to all of those are estimated. In the summary below we however do not show thresholds for NYHA 4 as it is almost 0 (once again, because only a single patient was classified as subjective NYHA 4).
+We use a model including the "transitional" NYHA classes and thresholds corresponding to all of those are estimated. In the summary below we however do not show thresholds for NYHA 4 as it is almost 0 (once again, because only a single patient was classified as  NYHA 4).
 
 ```{r}
-fit_boundaries_log <- brm(NYHA_spiro_subj ~ log(VO2_max), family = cumulative("logit"), data = data_nyha, 
+fit_boundaries_log <- brm(NYHA_spiro ~ log(VO2_peak), family = cumulative("logit"), data = data_nyha, 
                           iter = 6000, warmup = 2000,
                           file = here::here("stored_fits","boundaries_full_log"), file_refit = "on_change")
 ```
 
 
-```{r, fig.height=3, fig.cap="Posterior distribution of thresholds in the model. The thresholds correspond to lower bounds, i.e. the NYHA 1 threshold means that VO2 max above that threshold should be considered NYHA 1. Vertical dashed bars represent the commonly used thresholds."}
+```{r, fig.height=3, fig.cap="Posterior distribution of thresholds in the model. The thresholds correspond to lower bounds, i.e. the NYHA 1 threshold means that VO~2~ peak above that threshold should be considered NYHA 1. Vertical dashed bars represent the commonly used thresholds."}
 
 NYHA_colors <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00')
-names(NYHA_colors) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro_subj)[1:5])
+names(NYHA_colors) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro)[1:5])
 scale_color_nyha <- scale_color_manual(values = NYHA_colors)
 scale_fill_nyha <- scale_fill_manual(values = NYHA_colors)
 
@@ -392,19 +401,19 @@ for(i in 1:use_levels) {
   threshold_samples[,i] <- exp(threshold_raw[,i] / b)
 }
 threshold_samples[threshold_samples < -25] <- -25
-colnames(threshold_samples) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro_subj)[1:use_levels])
+colnames(threshold_samples) <- paste0("NYHA ", levels(data_nyha$NYHA_spiro)[1:use_levels])
 
-predicted_thresholds <- as_tibble(threshold_samples) %>% mutate(sample = 1:n()) %>% pivot_longer(starts_with("NYHA"), names_to = "NYHA", values_to = "min_VO2_max")
+predicted_thresholds <- as_tibble(threshold_samples) %>% mutate(sample = 1:n()) %>% pivot_longer(starts_with("NYHA"), names_to = "NYHA", values_to = "min_VO2_peak")
 
-true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), min_VO2_max = NYHA_VO2max_threshold)
+true_thresholds <- tibble(NYHA = paste0("NYHA ",3:1), min_VO2_peak = NYHA_VO2_peak_threshold)
 
 
 predicted_thresholds %>%
-  ggplot(aes(x = min_VO2_max, color = NYHA, fill = NYHA)) + 
-  geom_vline(aes(xintercept = min_VO2_max, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
+  ggplot(aes(x = min_VO2_peak, color = NYHA, fill = NYHA)) + 
+  geom_vline(aes(xintercept = min_VO2_peak, color = NYHA), size = 2, linetype = "dashed", data = true_thresholds) +
   geom_density(alpha = 0.5) + expand_limits(y = 0.9) +
   scale_y_continuous("Density") +
-  scale_x_continuous("Min. VO2 peak") +
+  scale_x_continuous(expression(paste("Min. ", VO[2]," peak"))) +
   scale_color_nyha +
   scale_fill_nyha
 
@@ -420,7 +429,7 @@ full_threshold_samples_summary <-
 full_threshold_samples_summary %>% table_format(caption = "Summary of the thresholds for NYHA classes based on the  model fit.") 
 ```
 
-The comparison with the commonly used thresholds is not completely direct as it is not clear how should the transitional NYHA classes compare. Still some qualitative inferences can be made: patients have predominantly pure NYHA 1 classification only a bit above the traditional threshold of 20, but if some patients classified as subjective NYHA 1-2 were considered part of NYHA 1, the threshold of 20 wouldn't be completely unreasonable.  However, for NYHA 2, there is a substantial deviation from the commonly used thresholds which increases for the NYHA 3 thresholds --- to better match the subjective measurements in our data, both thresholds would need to be revised downwards. We can't say anything conclusive about threshold for NYHA 4 due to the low number of patients with very high NYHA in our sample.
+The comparison with the commonly used thresholds is not completely direct as it is not clear how should the transitional NYHA classes compare. Still some qualitative inferences can be made: patients have predominantly pure NYHA 1 classification only a bit above the Weber threshold of 20, but if some patients classified as  NYHA 1-2 were considered part of NYHA 1, the threshold of 20 wouldn't be completely unreasonable.  However, for NYHA 2, there is a substantial deviation from the Weber thresholds which increases for the NYHA 3 thresholds --- to better match the  measurements in our data, both thresholds would need to be revised downwards. We can't say anything conclusive about threshold for NYHA 4 due to the low number of patients with very high NYHA in our sample.
 
 
 
@@ -429,52 +438,52 @@ boundaries_R2 <- suppressWarnings(bayes_R2(fit_boundaries_log))
 
 ```
 
-Additionally, while adjusting the thresholds would remove systematic differences between subjective NYHA and NYHA measured by spiroergometry, there is also substantial non-systematic variability between subjective NYHA levels of patients with the same VO2 peak measurements. Informally, one can see this by looking at patients with roughly the same VO2 peak - below is a figure showing the most populated range of VO2 peak values in the data:
+Additionally, while adjusting the thresholds would remove systematic differences between  NYHA and Weber class based on spiroergometry, there is also substantial non-systematic variability between  NYHA levels of patients with the same VO~2~ peak measurements. Informally, one can see this by looking at patients with roughly the same VO~2~ peak - below is a figure showing the most populated range of VO~2~ peak values in the data:
 
 ```{r}
-VO2max_example_low <- 13
-VO2max_example_high <- 14
+VO2_peak_example_low <- 13
+VO2_peak_example_high <- 14
 
 ```
 
-```{r, fig.cap=paste0("Distribution of subjective NYHA levels across patients with VO2 peak between ", VO2max_example_low, " and ", VO2max_example_high, ".")}
-data_nyha %>% filter(VO2_max >= VO2max_example_low & VO2_max <= VO2max_example_high) %>%
-  group_by(NYHA_spiro_subj) %>% summarise(count = n()) %>%
-  ggplot(aes(x = NYHA_spiro_subj, y = count)) + geom_bar(stat = "identity")  +
-  scale_x_discrete("NYHA subjective")
+```{r, fig.cap=paste0("Distribution of  NYHA levels across patients with VO~2~ peak between ", VO2_peak_example_low, " and ", VO2_peak_example_high, ".")}
+data_nyha %>% filter(VO2_peak >= VO2_peak_example_low & VO2_peak <= VO2_peak_example_high) %>%
+  group_by(NYHA_spiro) %>% summarise(count = n()) %>%
+  ggplot(aes(x = NYHA_spiro, y = count)) + geom_bar(stat = "identity")  +
+  scale_x_discrete("NYHA")
   
   
-#    %>% column_to_rownames("NYHA_spiro_subj") %>% as.matrix() %>% t()
+#    %>% column_to_rownames("NYHA_spiro") %>% as.matrix() %>% t()
 # 
-# counts_VO2max_example <- counts_VO2max_example[1,]
+# counts_VO2_peak_example <- counts_VO2_peak_example[1,]
 ```
 
-Although NYHA class 2 is the most prominent, we see some representation from the full range of subjective NYHA classes.
+Although NYHA class 2 is the most prominent, we see some representation from the full range of  NYHA classes.
 
-One way to quantify this in a single number is to note that in our whole data, VO2 peak can explain between `r scales::percent(boundaries_R2[,"Q2.5"])` and `rscales::percent(boundaries_R2[,"Q97.5"])` of total variance in the outcome (approximate Bayesian $R^2$, 95% credible interval).
+One way to quantify this in a single number is to note that in our whole data, VO~2~ peak can explain between `r scales::percent(boundaries_R2[,"Q2.5"])` and `rscales::percent(boundaries_R2[,"Q97.5"])` of total variance in the outcome (approximate Bayesian $R^2$, 95% credible interval).
 
 We can integrate those two views in one somewhat complex plot below:
 
 ```{r}
 # predicted_thresholds %>% filter(sample %in% sample.int(n = 6000, size = 100)) %>%
-#   ggplot(aes( x = min_VO2_max, y = NYHA)) + ggdist::stat_interval(color = "black", aes(color_ramp = stat(level)), interval_size = 10) + scale_color_nyha
+#   ggplot(aes( x = min_VO2_peak, y = NYHA)) + ggdist::stat_interval(color = "black", aes(color_ramp = stat(level)), interval_size = 10) + scale_color_nyha
 ```
 
 
-```{r, fig.cap = "Observed sujbective NYHA and VO2 peak measurements and model-derived thresholds. Each dot is a patient. The thick light blue line shows expected output if NYHA based on the traditional conversion from VO2 max exactly corresponded with subjective NYHA. Each thin black line corresponds to a single posterior sample of thresholds from the model, i.e. the cloud of lines shows our uncertainty about the best matching thresholds. "}
+```{r, fig.cap = "Observed NYHA and VO~2~ peak measurements and model-derived thresholds. Each dot is a patient. The thick light blue line shows expected output if Weber based on the traditional conversion from VO~2~ peak exactly corresponded with  NYHA. Each thin black line corresponds to a single posterior sample of thresholds from the model, i.e. the cloud of lines shows our uncertainty about the best matching thresholds. "}
 set.seed(45468855)
 base <- predicted_thresholds %>% filter(sample %in% sample.int(n = 6000, size = 200)) %>%
-  mutate(NYHA = as.numeric(factor(gsub("NYHA ", "", NYHA), levels = levels(data_nyha$NYHA_spiro_subj))),
+  mutate(NYHA = as.numeric(factor(gsub("NYHA ", "", NYHA), levels = levels(data_nyha$NYHA_spiro))),
          shift = runif(max(sample), min = -0.1, max = 0.1)[sample]) # Draw the same shift per sample
 base2 <- base %>% mutate(NYHA = NYHA + 1)
 
 rbind(base2, base) %>%
   mutate(shift = if_else(NYHA == 1 | NYHA == 6, 0, shift)) %>%
-  ggplot(aes( x = min_VO2_max, y = NYHA, group = sample)) + geom_line(alpha = 0.1) +
+  ggplot(aes( x = min_VO2_peak, y = NYHA, group = sample)) + geom_line(alpha = 0.1) +
   theoretical_geom +
-  geom_jitter(data = data_nyha, aes(x = VO2_max, y = as.integer(NYHA_spiro_subj)), inherit.aes = FALSE,
+  geom_jitter(data = data_nyha, aes(x = VO2_peak, y = as.integer(NYHA_spiro)), inherit.aes = FALSE,
               width = 0, height = 0.1, alpha = 0.8, color = "orangered" ) +
-  scale_y_continuous("NYHA subjective", breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+  scale_y_continuous("NYHA ", breaks = 1:7, labels = levels(data_nyha$NYHA_spiro)) +
   scale_x_VO2
 
   
@@ -483,18 +492,18 @@ rbind(base2, base) %>%
 A couple notes on the figure:
 
 - generally we see the thresholds around the location where the number of patients that would be misclassified with higher NYHA is the same as number of patients misclassified with lower NYHA.
-- the thresholds between NYHA 3-4 and NYHA 3 lies almost exlusively out of range of observed VO2 peak values. That's because even at VO2 peak < 8, majority of patients is classified as NYHA 3.
-- the thresholds betweeen NYHA 1-2 and NYHA 1 are quite high and reach even beyond observed data. That's because there are generally few patients with VO2 peak above 25 and a lot of them have subjective NYHA 1-2 and even one has NYHA 2
+- the thresholds between NYHA 3-4 and NYHA 3 lies almost exlusively out of range of observed VO~2~ peak values. That's because even at VO~2~ peak < 8, majority of patients is classified as NYHA 3.
+- the thresholds betweeen NYHA 1-2 and NYHA 1 are quite high and reach even beyond observed data. That's because there are generally few patients with VO~2~ peak above 25 and a lot of them have  NYHA 1-2 and one even has NYHA 2
 
-This hopefully demonstrates both of the previously discussed points: 1) to avoid bias (systematic under/over estimation of subjective NYHA), the thresholds would need to be moved and 2) even with the best thresholds, substantial proportion of patients would have discordant subjective NYHA and NYHA based on VO2 peak.
+This hopefully demonstrates both of the previously discussed points: 1) to avoid bias (systematic under/over estimation of NYHA), the thresholds would need to be moved and 2) even with the best thresholds, substantial proportion of patients would have discordant  NYHA and Weber based on VO~2~ peak.
 
 ## Association with adherence
 
 We can then extend the cumulative ordinal model to also account for adherence groups. To make better use of the limited data, we assume the association should be monotonic, i.e. that the group "B - all but one" should lie somewhere between the two extreme groups.
 
 ```{r}
-get_predictions <- function(fit, VO2_max_vals, adherence = FALSE, ndraws = 6000) {
-  data_to_predict <- tibble(VO2_max = VO2_max_vals)
+get_predictions <- function(fit, VO2_peak_vals, adherence = FALSE, ndraws = 6000) {
+  data_to_predict <- tibble(VO2_peak = VO2_peak_vals)
   if(adherence) {
     data_to_predict <- data_to_predict %>% crossing(tibble(adherence_category = factor(c( "Nonadherent" , "Fully adherent"), ordered = TRUE, levels = levels(data_nyha$adherence_category) )))
   } 
@@ -502,7 +511,7 @@ get_predictions <- function(fit, VO2_max_vals, adherence = FALSE, ndraws = 6000)
   predictions <- posterior_epred(fit, ndraws = ndraws, newdata = data_to_predict, transform = TRUE, summary = FALSE)
   predictions_mean <- array(0, dim = dim(predictions)[1:2])
   ncategories <- dim(predictions)[3]
-  if(ncategories != length(levels(fit$data$NYHA_spiro_subj))) {
+  if(ncategories != length(levels(fit$data$NYHA_spiro))) {
     stop("Mismatched ncategories")
   }
   for(i in 1:ncategories) {
@@ -517,23 +526,23 @@ get_predictions <- function(fit, VO2_max_vals, adherence = FALSE, ndraws = 6000)
 }
 
 plot_fitted_trend <- function(fit, adherence = FALSE, ndraws = 100) {
-  predictions_df <- get_predictions(fit, VO2_max_vals = 5:40, adherence = adherence, ndraws = ndraws)
-  ncategories <- length(levels(fit$data$NYHA_spiro_subj))
+  predictions_df <- get_predictions(fit, VO2_peak_vals = 5:40, adherence = adherence, ndraws = ndraws)
+  ncategories <- length(levels(fit$data$NYHA_spiro))
 
   if(adherence) {
     predictions_df <- predictions_df %>% mutate(group = factor(paste(sample,adherence_category)))
-    aesthetics <- aes(x = VO2_max, y = NYHA, color = adherence_category)
+    aesthetics <- aes(x = VO2_peak, y = NYHA, color = adherence_category)
   } else {
     predictions_df <- predictions_df %>% mutate(group = sample)
-    aesthetics <- aes(x = VO2_max, y = NYHA)
+    aesthetics <- aes(x = VO2_peak, y = NYHA)
   }
   
   predictions_df %>% droplevels() %>%
     ggplot(aesthetics) +
     theoretical_geom +
     geom_line(aes(group = group), alpha = 0.3) + 
-    scale_x_continuous("VO2 peak [ml/kg/min]", minor_breaks = NYHA_VO2max_breaks) +
-    scale_y_continuous("NYHA subjective", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro_subj)) +
+    scale_x_VO2 +
+    scale_y_continuous("NYHA ", minor_breaks = 2:7 - 0.5, breaks = 1:7, labels = levels(data_nyha$NYHA_spiro)) +
     scale_color_adherence +
     expand_limits(y = ncategories) +
     theme(panel.grid.minor = element_line(colour = "lightgray")) +
@@ -544,40 +553,41 @@ plot_fitted_trend <- function(fit, adherence = FALSE, ndraws = 100) {
 We start by allowing a constant shift in the linear predictor (relative log-odds) based on adherence category.
 
 ```{r}
-fit_adherence <- brm(NYHA_spiro_subj ~ log(VO2_max) + adherence_category, family = cumulative("logit"), data = data_nyha,
+fit_adherence <- brm(NYHA_spiro ~ log(VO2_peak) + adherence_category, family = cumulative("logit"), data = data_nyha,
                      iter = 6000, warmup = 2000, refresh = 1500,
                      file = here::here("stored_fits","nyha_adherence"), file_refit = "on_change") 
 ```
 
-```{r, fig.cap = "Summary of the constant shift model. Each line is a posterior sample showing association between VO2 max and average subjective NYHA. The thick light blue line shows expected output if NYHA based on VO2 max exactly corresponded with subjective NYHA."}
+```{r, fig.cap = "Summary of the constant shift model. Each line is a posterior sample showing association between VO~2~ peak and average  NYHA. The thick light blue line shows expected output if NYHA based on VO~2~ peak exactly corresponded with  NYHA."}
 plot_fitted_trend(fit_adherence, adherence = TRUE)
 ```
-We see that the data are consistent with non-adherent patients having both higher and lower average subjective NYHA with the same VO2 peak. While it is possible that we could determine the sign of the difference with more data, the current data already allow us to rule out that there is a substantial difference. One way to quantify this is to look at the predictions for difference in mean transitional NYHA class across different VO2 peak levels, here a difference of 1 would mean an average increase of one transitional class (e.g., from "1-2" to "2" or from "2-3" to "3")
+
+We see that the data are consistent with non-adherent patients having both higher and lower average NYHA with the same VO~2~ peak. While it is possible that we could determine the sign of the difference with more data, the current data already allow us to rule out that there is a substantial difference. One way to quantify this is to look at the predictions for difference in mean transitional NYHA class across different VO~2~ peak levels, here a difference of 1 would mean an average increase of one transitional class (e.g., from "1-2" to "2" or from "2-3" to "3")
 
 ```{r}
-prediction_mean_NYHA_diff <- function(fit, adherence = FALSE, VO2_max_vals = c(10, 20, 30)) {
-  prediction_df <- get_predictions(fit, adherence = adherence, VO2_max_vals = VO2_max_vals)
+prediction_mean_NYHA_diff <- function(fit, adherence = FALSE, VO2_peak_vals = c(10, 20, 30)) {
+  prediction_df <- get_predictions(fit, adherence = adherence, VO2_peak_vals = VO2_peak_vals)
   prediction_wide <- prediction_df %>% pivot_wider(names_from = adherence_category, values_from = NYHA) %>%
     mutate(NYHA_diff = `Fully adherent` - `Nonadherent`)
-  prediction_wide %>% group_by(VO2_max) %>% summarise(`Mean Difference Adherent to Nonadherent` = round(mean(NYHA_diff), 2),
+  prediction_wide %>% group_by(VO2_peak) %>% summarise(`Mean Difference Adherent to Nonadherent` = round(mean(NYHA_diff), 2),
                                                       `95% CI` = paste0("[",round(quantile(NYHA_diff, probs = 0.025),2), " ; ", round(quantile(NYHA_diff, probs = 0.975), 2), "]")) %>%
-    rename(`VO2 peak` = VO2_max)
+    rename(`VO2 peak` = VO2_peak)
 }
 
 prediction_mean_NYHA_diff(fit_adherence, adherence = TRUE) %>% table_format()
 ```
 
-While the point estimates are close to zero, the associated uncertainty says that a difference of more than half an transitional NYHA class (i.e. a quarter of the standard NYHA class) is not consistent with the data across various VO2 peak levels.
+While the point estimates are close to zero, the associated uncertainty says that a difference of more than half a transitional NYHA class (i.e. a quarter of the standard NYHA class) is not consistent with the data across various VO~2~ peak levels.
 
 Further we can allow not only a constant shift, but also let the slope of the association vary, which we will call the "interaction" model.
 
 ```{r}
-fit_adherence_int <- brm(NYHA_spiro_subj ~ log(VO2_max) * adherence_category, family = cumulative("logit"), data = data_nyha, 
+fit_adherence_int <- brm(NYHA_spiro ~ log(VO2_peak) * adherence_category, family = cumulative("logit"), data = data_nyha, 
                          iter = 6000, warmup = 2000, refresh = 1500,
                          file = here::here("stored_fits","nyha_adherence_int"), file_refit = "on_change") 
 ```
 
-```{r, fig.cap = "Summary of the interaction model model. Each line is a posterior sample showing association between VO2 max and average subjective NYHA. The thick light blue line shows expected output if NYHA based on VO2 max exactly corresponded with subjective NYHA."}
+```{r, fig.cap = "Summary of the interaction model model. Each line is a posterior sample showing association between VO~2~ peak and average  NYHA. The thick light blue line shows expected output if NYHA based on VO~2~ peak exactly corresponded with  NYHA."}
 plot_fitted_trend(fit_adherence_int, adherence = TRUE)
 ```
 
@@ -587,7 +597,7 @@ prediction_mean_NYHA_diff(fit_adherence_int, adherence = TRUE) %>% table_format(
 
 
 ```{r}
-# pred_int_for_10 <- posterior_predict(fit_adherence_int, newdata = data.frame(VO2_max = 10, adherence_category = factor(c( "A - nonadherent" , "C - all"), ordered = TRUE, levels = levels(data_nyha$adherence_category) )))
+# pred_int_for_10 <- posterior_predict(fit_adherence_int, newdata = data.frame(VO2_peak = 10, adherence_category = factor(c( "A - nonadherent" , "C - all"), ordered = TRUE, levels = levels(data_nyha$adherence_category) )))
 # 
 # prob_all_larger_nonadherent = mean(pred_int_for_10[,1] >= pred_int_for_10[,2] - 2)
 ```
@@ -606,28 +616,28 @@ plot_scatter + facet_wrap(~cohort)
 ```{r}
 data_nyha %>% 
   rowwise() %>%
-  mutate(`NYHA status` = 
-           case_when(grepl(NYHA_spiro_obj, as.character(NYHA_spiro_subj)) ~ "Concordant",
-                     NYHA_spiro_obj < as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective lower",
-                     NYHA_spiro_obj > as.integer(substr(NYHA_spiro_subj, 1, 1)) ~ "Objective higher",
+  mutate(`NYHA vs. Weber status` = 
+           case_when(grepl(Weber_spiro, as.character(NYHA_spiro)) ~ "Concordant",
+                     Weber_spiro < as.integer(substr(NYHA_spiro, 1, 1)) ~ "Weber lower",
+                     Weber_spiro > as.integer(substr(NYHA_spiro, 1, 1)) ~ "Weber higher",
                      TRUE ~ "Invalid")) %>%
   # filter(`NYHA status` == "Objective higher") %>%
-  # select(NYHA_spiro_obj, NYHA_spiro_subj)
+  # select(Weber_spiro, NYHA_spiro)
   
-  group_by(cohort, `NYHA status`) %>% tally() %>%
-  table_format(caption = "Count of patients based on difference between subjective NYHA and NYHA based on VO2 max, split by cohort")
+  group_by(cohort, `NYHA vs. Weber status`) %>% tally() %>%
+  table_format(caption = "Count of patients based on difference between  NYHA and Weber based on VO~2~ peak, split by cohort")
 ```
 
 
 ```{r}
-plot_VO2_max + facet_wrap(~cohort)
+plot_VO2_peak + facet_wrap(~cohort)
 ```
 
 There doesn't appear to be any obvious difference.
 
 
 ```{r}
-fit_boundaries_cohort_log <- brm(NYHA_spiro_subj ~ log(VO2_max) + factor(cohort), family = cumulative("logit"), data = data_nyha, 
+fit_boundaries_cohort_log <- brm(NYHA_spiro ~ log(VO2_peak) + factor(cohort), family = cumulative("logit"), data = data_nyha, 
                           iter = 6000, warmup = 2000,
                           file = here::here("stored_fits","boundaries_full_cohort_log"), file_refit = "on_change")
 ```
@@ -642,21 +652,21 @@ summary(fit_boundaries_cohort_log)
 ## Main conclusions
 
 ```{r}
-vo2max_25 <- data_nyha %>% ungroup() %>% filter(VO2_max >= 25) %>% summarise(N = n(), NYHA_1 = sum(NYHA_spiro_subj == "1"), NYHA_1_2 = sum(NYHA_spiro_subj == "1-2"),   NYHA_2 = sum(NYHA_spiro_subj == "2"))
+VO2_peak_25 <- data_nyha %>% ungroup() %>% filter(VO2_peak >= 25) %>% summarise(N = n(), NYHA_1 = sum(NYHA_spiro == "1"), NYHA_1_2 = sum(NYHA_spiro == "1-2"),   NYHA_2 = sum(NYHA_spiro == "2"))
 ```
 
 
-- VO2 max value from spiroergometry is an imperfect predictor of subjective NYHA score and vice versa. The agreement between spiroergometry and subjective NYHA is largest for high VO2 max, but even among the `r vo2max_25$N` patients with VO2 max > 25 ml/kg/min, only `r vo2max_25$NYHA_1` were assigned pure NYHA 1 while `r vo2max_25$NYHA_1_2` were assigned NYHA 1-2 and `r vo2max_25$NYHA_2` was assigned NYHA 2 subjectively. The variability in subjective NYHA is even larger for low VO2 max values.
+- VO~2~ peak value from spiroergometry is an imperfect predictor of  NYHA score and vice versa. The agreement between spiroergometry and  NYHA is largest for high VO~2~ peak, but even among the `r VO2_peak_25$N` patients with VO~2~ peak > 25 ml/kg/min, only `r VO2_peak_25$NYHA_1` were assigned pure NYHA 1 while `r VO2_peak_25$NYHA_1_2` were assigned NYHA 1-2 and `r VO2_peak_25$NYHA_2` was assigned NYHA 2. The variability in  NYHA is even larger for low VO~2~ peak values.
 
-- Subjective NYHA 4 is almost unseen in the data - maybe patients with NYHA 4 were effectively excluded due to not being able to perform spiroergometry?
+-  NYHA 4 is almost unseen in the data - maybe patients with NYHA 4 were effectively excluded due to not being able to perform spiroergometry?
 
-- If a better match between NYHA derived from spiroergometry in this dataset and subjective NYHA was desired, the upper VO2 max thresholds for NYHA 3 and 4 would need to be moved down substantially and the threshold for NYHA 1 would need to be moved up. 
+- If a better match between Weber derived from spiroergometry in this dataset and  NYHA was desired, the upper VO~2~ peak thresholds for Weber C and D would need to be moved down substantially and the threshold for Weber A would need to be moved up. 
 
-- With the current data, we cannot say anything conclusive about the potential change of association between subjective and objective NYHA between adherent and non-adherent patient subgroups, although very large differences (an average of half a NYHA category or more in either direction) are not consistent with our data. The precision we can achieve is limited by the low number of non-adherent patients observed in the cohort. Results are very similar, if we also try to account for partial adherence (data not shown).
+- With the current data, we cannot say anything conclusive about the potential change of association between Weber  and  NYHA between adherent and non-adherent patient subgroups, although very large differences (an average of half a NYHA category or more in either direction) are not consistent with our data. The precision we can achieve is limited by the low number of non-adherent patients observed in the cohort. Results are very similar, if we also try to account for partial adherence (data not shown).
 
 ## Reproducibility
 
-Full code to reproduce this report is part of the supplementary material.
+Full code to reproduce this report is part of this supplementary material in the file `nyha_full.Rmd`.
 
 Packages used:
 
