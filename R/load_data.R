@@ -103,7 +103,7 @@ fix_spiro_date <- function(spiro_date) {
 }
 
 load_data_adherence <- function(cohort, range, missing_cols = list()) {
-  data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 unor 2022.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
+  data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 12_2022 CPET+Chol_6_2023.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
 
   column_map <- {
     all <- read.table(here::here(paste0("column_map_", cohort, ".txt")), encoding = "UTF-8")

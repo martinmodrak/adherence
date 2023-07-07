@@ -331,7 +331,6 @@ plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - ques
 ```
 
 
-
 # Modelling
 
 ## Adherence by factors
@@ -706,3 +705,50 @@ So we have substantial uncertainty about the association of the questions with a
 # summary(fit_questionnaire_aggregate)
 ```
 
+# Cholesterol, liver
+
+```{r}
+plot_adherence_by_continuous(data_long, cholesterol_total)
+plot_adherence_by_continuous(data_long, TAG)
+plot_adherence_by_continuous(data_long, log(HDL_C))
+plot_adherence_by_continuous(data_long, LDL_C)
+plot_adherence_by_continuous(data_long, non_HDL)
+
+```
+
+
+```{r}
+data_long_sum_no_fur <- data_long %>%
+  filter(has) %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
+            N_adherent_no_fur = sum(has & adherent_int & drug_class != "furosemide", na.rm = TRUE), 
+            N_drugs_no_fur = sum(has  & drug_class != "furosemide", na.rm = TRUE),
+            # adherence_category = case_when(N_adherent == N_drugs ~ "C - all",
+            #                      N_drugs > 1 & N_adherent == N_drugs_no_fur - 1 ~ "B - all but one",
+            #                      TRUE ~ "A - nonadherent"
+            #                      ),
+            adherence_category = case_when(N_adherent_no_fur == N_drugs_no_fur ~ "Fully adherent",
+                                 TRUE ~ "Nonadherent"
+                                 ),
+            adherence_category = factor(adherence_category, 
+                                        levels = c("Nonadherent", "Fully adherent"))  )
+
+data_wide_a <- data_wide %>% 
+  inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"))
+
+if(nrow(data_wide_a) != nrow(data_wide)) {
+  stop("Bad join")
+}
+```
+
+```{r}
+adherent_diagnosis_contingency <- data_wide_a %>% group_by(adherence_category, diagnosis_group) %>%
+  tally() %>%
+  pivot_wider(names_from = "diagnosis_group", values_from = "n") %>%
+  column_to_rownames("adherence_category") %>%
+  as.matrix()
+
+
+chisq.test(adherent_diagnosis_contingency, simulate.p.value = TRUE)
+```
