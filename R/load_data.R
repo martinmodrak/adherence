@@ -85,7 +85,7 @@ fix_BP <- function(bp) {
     print(bp[!is.na(bp) & is.na(res)])
     stop("NAs introduced")
   }
-
+  return(res)
 }
 
 fix_spiro_date <- function(spiro_date) {
@@ -96,9 +96,9 @@ fix_spiro_date <- function(spiro_date) {
       print(spiro_date[!is.na(spiro_date) & is.na(res)])
       stop("NAs introduced")
     }
-    res
+    return(res)
   } else {
-    spiro_date
+    return(spiro_date)
   }
 }
 
@@ -180,24 +180,35 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
                                  names_to = c("drug_class"), values_to = "dose")
 
 
-  drug_class_product <- spec_level %>% select(drug_class, measured_product)
 
-
-  spec_joint <-
-    rbind(spec_level,
-          rbind(spec_has,
-                spec_adherent,
-                spec_dose)  %>% inner_join(drug_class_product, by = "drug_class")
-    )
+  # Other diuretics are handled specifically
+  spec_joint <- rbind(spec_has, spec_adherent, spec_dose) %>%
+    filter(drug_class != "other_diuretics")
 
   ###################################################################
 
-  data_long_raw <- data_wide  %>%
-    select(-starts_with("which")) %>%
-    mutate(across(c(starts_with("level."), starts_with("dose")), as.character)) %>%
+  data_long_raw_class <- data_wide  %>%
+    select(-starts_with("which"), -starts_with("level")) %>%
+    mutate(across(starts_with("dose"), as.character)) %>%
     pivot_longer_spec(spec_joint)
 
+  data_long_raw_level <- data_wide  %>%
+    select(subject_id, examination_date, starts_with("level")) %>%
+    mutate(across(starts_with("level."), as.character)) %>%
+    pivot_longer_spec(spec_level)
 
+
+  # other_diuretics are handled separately, as they don't have corresponding level
+  data_long_raw <- data_long_raw_class %>%
+    filter(drug_class != "other_diuretics") %>%
+    inner_join(data_long_raw_level, by = c("subject_id", "examination_date", "drug_class"),
+               unmatched = "error",
+               relationship = "one-to-many") %>%
+    rbind(
+      data_long_raw_class %>%
+        filter(drug_class == "other_diuretics") %>%
+        mutate(level = NA_real_, measured_product = NA_character_)
+    )
 
   unrecognized_levels <- data_long_raw %>% select(subject_id, drug_class, level) %>%
     filter(!is.na(level), !grepl("^(<|>|>>)? ?[0-9]+([.,][0-9]*)?(E[+\\-][0-9]+)?$", level),

@@ -1,6 +1,11 @@
 ---
 title: "Adherence"
-output: html_document
+output: 
+  bookdown::word_document2: 
+    toc: false
+    number_sections: false
+    reference_docx: "output_template.docx"
+date: "Version: `r format(Sys.time(), '%Y-%m-%d')`"
 ---
 
 ```{r setup, message=FALSE, echo = FALSE, results='hide', warning = FALSE}
@@ -12,6 +17,7 @@ library(cmdstanr)
 library(bayesplot)
 library(tidybayes)
 library(ggdist)
+library(gtsummary)
 
 knitr::opts_chunk$set(echo=FALSE)
 
@@ -61,6 +67,117 @@ long_for_checks %>%
     filter(adherent_manual != adherent) %>%  distinct()  
 
 ```
+
+
+# Summary statistics
+
+Table 1 - we count patients from both cohorts twice here (otherwise we'd need to figure out how to pick just one lab, NYHA, age, ... for repeated patients - e.g. taking the later measurement only would be an option)
+
+TODO unsure how to get "Lowest LVEF during previous follow up [%]" should that be one of "První EFLK v ambulanci pro srdeční selhání" or "Úplně původní EFLK (%) při prvním kontaktu s nemocnicí"?
+"
+
+```{r}
+# data_wide %>%
+#   mutate(BMI2 = weight /(height / 100) ^ 2, BMI_diff = BMI2 - BMI) %>%
+#   pull(BMI_diff) %>% table()
+
+data_table1 <- data_wide %>% 
+  mutate(BMI = weight /(height / 100) ^ 2) %>%
+  select(
+    subject_id,
+  sex, age, weight, height, BMI, ekg_freq, pulse, systolic_BP, diastolic_BP, NYHA, EF_numeric, starts_with("lab_"), starts_with("has."), cohort
+) 
+
+tbl1_stats <- list(all_continuous() ~ "{mean} (±{sd})")
+tbl_summary(data_table1, statistic = tbl1_stats, include = -subject_id)
+```
+
+
+```{r}
+tbl_summary(data_table1, by = cohort, statistic = tbl1_stats, include = -subject_id)
+```
+
+
+
+
+Overlap between cohorts
+
+```{r}
+data_wide %>% group_by(subject_id) %>% 
+  summarise(cohort_ = if_else(n() == 2, "both", paste(cohort, collapse = ","))) %>%
+  group_by(cohort_) %>% tally()
+```
+
+
+Adherence categories
+
+```{r}
+data_long_sum <- data_long %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
+            category = case_when(N_drugs == 0 ~ "0 drugs",
+                                 N_adherent == 0 ~ "A - none",
+                                 N_adherent == N_drugs ~ "E - all",
+                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                                 N_adherent == N_drugs - 1 ~ "D - all but one",
+                                 TRUE ~ "C - in between"
+                                 ),
+            category_bin = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent")) 
+
+data_long_sum %>%
+  group_by(category) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+
+data_long_sum %>%
+  group_by(category_bin) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+```
+
+Same as above, but excluding furosemide
+
+```{r}
+data_long_sum_no_fur <- data_long %>%
+  filter(drug_class != "furosemide") %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
+            category = case_when(N_drugs == 0 ~ "0 drugs",
+                                 N_adherent == 0 ~ "A - none",
+                                 N_adherent == N_drugs ~ "E - all",
+                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                                 N_adherent == N_drugs - 1 ~ "D - all but one",
+                                 TRUE ~ "C - in between"
+                                 ),
+            category_bin = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent"),
+            .groups = "drop") 
+
+data_long_sum_no_fur %>%
+  group_by(category) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+
+data_long_sum_no_fur %>%
+  filter(N_drugs > 0) %>%
+  group_by(category_bin) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+```
+
+I.e. most people are adherent to all their medications and very few are non-adherent to multiple medications.
+
+
+Comparison of clinical and laboratory parameters of adherent and non-adherent patients:
+
+```{r}
+data_table_comparison <- data_table1 %>%
+  inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"), relationship = "one-to-one", unmatched = "error")
+
+tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)
+```
+
+
+
 
 # Exploratory plots
 
@@ -136,45 +253,7 @@ crossing(N_adherent = 0:max(N_drugs_per_subject$N_drugs), N_drugs = 1:max(N_drug
   
 ```
 
-Or to summarise into five adherence categories:
 
-```{r}
-data_long_sum <- data_long %>%
-  filter(has) %>%
-  group_by(subject_id) %>%
-  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
-            category = case_when(N_adherent == 0 ~ "A - none",
-                                 N_adherent == N_drugs ~ "E - all",
-                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
-                                 N_adherent == N_drugs - 1 ~ "D - all but one",
-                                 TRUE ~ "C - in between"
-                                 )) 
-
-data_long_sum %>%
-  group_by(category) %>%
-  summarise(n())
-```
-
-Same as above, but excluding furosemide
-
-```{r}
-data_long_sum_no_fur <- data_long %>%
-  filter(has, drug_class != "furosemide") %>%
-  group_by(subject_id) %>%
-  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
-            category = case_when(N_adherent == 0 ~ "A - none",
-                                 N_adherent == N_drugs ~ "E - all",
-                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
-                                 N_adherent == N_drugs - 1 ~ "D - all but one",
-                                 TRUE ~ "C - in between"
-                                 )) 
-
-data_long_sum_no_fur %>%
-  group_by(category) %>%
-  summarise(n())
-```
-
-I.e. most people are adherent to all their medications and very few are non-adherent to multiple medications.
 
 ## Adherence by various factors
 
@@ -276,10 +355,8 @@ data_wide %>% group_by(subject_id, cohort) %>% summarise(death = any(alive_2021_
 
 
 ```{r}
-data_wide_sum <- data_wide %>% inner_join(data_long_sum, by = "subject_id")
-if(nrow(data_wide_sum) != nrow(data_wide)) {
-  stop("Bad join")
-}
+data_wide_sum <- data_wide %>% inner_join(data_long_sum, by = c("subject_id", "cohort"),
+                                          relationship = "one-to-one", unmatched = "error")
 
 data_wide_sum %>% group_by(cohort, category) %>% summarise(count = n(), deaths = sum(alive_2021_12_11 != "ano"), mean_alive = mean(alive_2021_12_11 == "ano"))
 ```
@@ -542,7 +619,7 @@ fit_badhealth$summary(variables = c("badhealth_slope", "nyha_thres", "VO2_max_sl
 
 we are primarily interested in the "badhealth_slope" variable, which is the association between bad health and adherence. We see that the 90% credible interval  is clearly positive, i.e. worse health is associated with increased adherence. Other parameters show the link between bad health and the other variables.
 
-The value of the bad health hidden variable can be interpreted e.g by it's association to NYHA levels - the "nyha_thres" variables are the thresholds for NYHA levels (we observe 6 NYHA levels: `r paste0(levels(patient_data$NYHA), collapse = ", ")`). So bad health < -1.9 would be most often (but not always) associated with NYHA 1 while bad health between 1.7 and 4.2 would be associated with NYHA 3.
+The value of the bad health hidden variable can be interpreted e.g by it's association to NYHA levels - the "nyha_thres" variables are the thresholds for NYHA levels (we observe 6 NYHA levels: `r paste0(levels(patient_data$NYHA), collapse = ", ")`). So bad health < -1.75 would be most often (but not always) associated with NYHA 1 while bad health between 1.9 and 4.4 would be associated with NYHA 3.
 
 
 TODO: maybe show difference in adherence from "best" to "worst" patient?

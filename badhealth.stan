@@ -1,22 +1,22 @@
 data {
   int<lower=0> N;
-  int<lower=0,upper=1> adherent[N];
+  array[N] int<lower=0,upper=1> adherent;
   int<lower=2> N_measurements;
-  int<lower=1, upper=N_measurements> measurement[N];
+  array[N] int<lower=1, upper=N_measurements> measurement;
   int<lower=2> N_classes;
-  int<lower=1, upper=N_classes> classes[N];
+  array[N] int<lower=1, upper=N_classes> classes;
 
   int<lower=2> N_NYHA;
-  int<lower=0, upper=N_NYHA> NYHA[N_measurements];
-  int<lower=0,upper=1> VO2_max_missing[N_measurements];
+  array[N_measurements] int<lower=0, upper=N_NYHA> NYHA;
+  array[N_measurements] int<lower=0,upper=1> VO2_max_missing;
   vector<lower=0>[N_measurements] VO2_max;
-  int<lower=0,upper=1> NT_proBNP_missing[N_measurements];
+  array[N_measurements]  int<lower=0,upper=1> NT_proBNP_missing;
   vector<lower=0>[N_measurements] NT_proBNP;
-  int<lower=0, upper=1> cohort[N_measurements];
+  array[N_measurements] int<lower=0, upper=1> cohort;
 
   int<lower=2> N_EF;
-  int<lower=0,upper=1> EF_missing[N_measurements];
-  int<lower=0, upper=N_EF> EF[N_measurements];
+  array[N_measurements] int<lower=0,upper=1> EF_missing;
+  array[N_measurements] int<lower=0, upper=N_EF> EF;
 
 }
 
