@@ -6,7 +6,7 @@ plot_adherence_by_continuous <- function(data_long, by_val) {
     filter(has, !is.na(adherent_int), !is.na({{by_val}})) %>%
     group_by(drug_class, cohort) %>%
     filter(any(adherent_int == 0), any(!is.na({{by_val}}))) %>%
-    ggplot(aes(y = adherent_int, x = {{by_val}}, color = cohort, shape = cohort, group = 1)) + stat_smooth(method = "glm", method.args=list(family="binomial"), formula = y ~ x, color = "black") + geom_point(position = position_jitter(height = 0.1), alpha = 0.5) +
+    ggplot(aes(y = adherent_int, x = {{by_val}}, group = 1)) + stat_smooth(method = "glm", method.args=list(family="binomial"), formula = y ~ x, color = "black") + geom_point(aes(color = cohort, shape = cohort), position = position_jitter(height = 0.1), alpha = 0.5) +
     scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
                        breaks = c(0,0.5,1)) +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 3) )) +
@@ -48,7 +48,7 @@ plot_adherence_by_discrete <- function(data_long, by_val) {
               proportion = yes / (yes + no),
               low95 = qbeta(0.025, yes + 1, no + 1),
               high95 = qbeta(0.975, yes + 1, no + 1),
-              text_y = if_else(cohort == "2020", 1.25,1.65),
+              text_y = if_else(unique(cohort) == "2020", 1.25, 1.65),
               total = yes + no, .groups = "drop") %>%
     ggplot(aes(x = {{by_val}}, y = proportion, ymin = low95, ymax = high95, label = total, color = cohort)) +
     geom_linerange(pos = my_pos) + geom_point(size = 2, pos = my_pos) + geom_label(aes(y = text_y), size = 3,pos = my_pos) + expand_limits(y = c(0, 1.8)) +

@@ -5,6 +5,7 @@ output:
     toc: false
     number_sections: false
     reference_docx: "output_template.docx"
+    df_print: kable
 date: "Version: `r format(Sys.time(), '%Y-%m-%d')`"
 ---
 
@@ -18,8 +19,9 @@ library(bayesplot)
 library(tidybayes)
 library(ggdist)
 library(gtsummary)
+library(flextable)
 
-knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(echo=FALSE, fig.width = 8, fig.height = 5, cache = TRUE)
 
 document_output <- isTRUE(getOption('knitr.in.progress'))
 
@@ -44,8 +46,13 @@ run_pp_checks <- FALSE
 
 devtools::load_all()
 
+```
+
+
+```{r load-data}
 source(here::here("data_into_session.R"))
 ```
+
 
 Following subjects have discrepancy between the "Má XX" column and measured levels.
 Measured levels take priority.
@@ -76,7 +83,7 @@ Table 1 - we count patients from both cohorts twice here (otherwise we'd need to
 TODO unsure how to get "Lowest LVEF during previous follow up [%]" should that be one of "První EFLK v ambulanci pro srdeční selhání" or "Úplně původní EFLK (%) při prvním kontaktu s nemocnicí"?
 "
 
-```{r}
+```{r, message=FALSE}
 # data_wide %>%
 #   mutate(BMI2 = weight /(height / 100) ^ 2, BMI_diff = BMI2 - BMI) %>%
 #   pull(BMI_diff) %>% table()
@@ -93,8 +100,11 @@ tbl_summary(data_table1, statistic = tbl1_stats, include = -subject_id)
 ```
 
 
-```{r}
-tbl_summary(data_table1, by = cohort, statistic = tbl1_stats, include = -subject_id)
+Summary by cohorts. P-values for tests are: Wilcoxon test for continous, Chi-squared test for all categorical.
+
+```{r, message=FALSE}
+tbl1_test <- list(all_categorical() ~ "chisq.test")
+tbl_summary(data_table1, by = cohort, statistic = tbl1_stats, include = -subject_id) %>% add_p(test = tbl1_test)
 ```
 
 
@@ -167,13 +177,13 @@ data_long_sum_no_fur %>%
 I.e. most people are adherent to all their medications and very few are non-adherent to multiple medications.
 
 
-Comparison of clinical and laboratory parameters of adherent and non-adherent patients:
+Comparison of clinical and laboratory parameters of adherent and non-adherent patients (excluding furosemide):
 
-```{r}
+```{r, message=FALSE}
 data_table_comparison <- data_table1 %>%
   inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"), relationship = "one-to-one", unmatched = "error")
 
-tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)
+tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test)
 ```
 
 
@@ -198,7 +208,7 @@ First let's look at the drug combinations in use:
 
 TODO: upset - by cohort? Or merge (currently, imputing NAs as 0)
 
-```{r}
+```{r, fig.width = 8}
 data_upset <- data_wide %>% 
   mutate(subject_id = paste(subject_id, cohort, sep = "_")) %>%
   select(subject_id, starts_with("has.")) %>%
@@ -269,7 +279,6 @@ the associated 95% CI (line). The total number of patients taking the drug falli
 
 ```{r}
 plot_adherence_by_discrete(data_long, sex)
-
 ```
 
 A bunch of plots for various variables follow:
