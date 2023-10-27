@@ -102,6 +102,15 @@ fix_spiro_date <- function(spiro_date) {
   }
 }
 
+fix_binary <- function(x) {
+  bad_values <- x[!is.na(x) & !(as.character(x) %in% c("0","1"))]
+  if(length(bad_values) > 0) {
+    print(unique(bad_values))
+    stop("Bad binary values")
+  }
+  return(as.integer(x) == 1)
+}
+
 load_data_adherence <- function(cohort, range, missing_cols = list()) {
   data_raw <- read_excel(here::here("private_data", "Adherence - LEVEL-CHF kompletni soubor 2018 a 2020 12_2022 CPET+Chol_6_2023.xlsx"), sheet = paste0("Seznam pacient\u016f ", cohort), range = range)
 
@@ -122,11 +131,14 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
     data_wide[[mc]] <- missing_cols[[mc]]
   }
 
+  stopifnot(all(!is.na(data_wide$alive_2021_12_11)))
+
   as.has <- function(x) {
     x <- as.integer(x)
     x[x > 1] <- 1
     x
   }
+
 
   data_wide <- data_wide %>%
     mutate(cohort = as.character(!!cohort),
@@ -140,6 +152,9 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
 
            systolic_BP = fix_BP(systolic_BP),
            diastolic_BP = fix_BP(diastolic_BP),
+           diabetes = fix_binary(diabetes),
+
+           alive_2021_12_11 = alive_2021_12_11 == "ano",
 
            sex = factor(sex, levels = c("0","1", "M", "\u017d"), labels = c("F", "M", "M2", "F2")),
            sex = fct_collapse(sex, M = c("M", "M2"), F = c("F", "F2")),
@@ -157,6 +172,7 @@ load_data_adherence <- function(cohort, range, missing_cols = list()) {
                                        is_dKMP ~ "dKMP",
                                        TRUE ~ "Other")
            )
+
 
 
 

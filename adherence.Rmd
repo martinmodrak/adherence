@@ -89,10 +89,11 @@ TODO unsure how to get "Lowest LVEF during previous follow up [%]" should that b
 #   pull(BMI_diff) %>% table()
 
 data_table1 <- data_wide %>% 
-  mutate(BMI = weight /(height / 100) ^ 2) %>%
+  mutate(BMI = weight /(height / 100) ^ 2, deceased_2021_12_11 = !alive_2021_12_11) %>%
   select(
     subject_id,
-  sex, age, weight, height, BMI, ekg_freq, pulse, systolic_BP, diastolic_BP, NYHA, EF_numeric, starts_with("lab_"), starts_with("has."), cohort
+  sex, age, weight, height, BMI, ekg_freq, diabetes, pulse, systolic_BP, diastolic_BP, NYHA, EF_numeric, starts_with("lab_"), starts_with("has."), cohort,
+  deceased_2021_12_11
 ) 
 
 tbl1_stats <- list(all_continuous() ~ "{mean} (±{sd})")
@@ -100,7 +101,9 @@ tbl_summary(data_table1, statistic = tbl1_stats, include = -subject_id)
 ```
 
 
-Summary by cohorts. P-values for tests are: Wilcoxon test for continous, Chi-squared test for all categorical.
+## Summary by cohorts. 
+
+P-values for tests are: Wilcoxon test for continous, Chi-squared test for all categorical.
 
 ```{r, message=FALSE}
 tbl1_test <- list(all_categorical() ~ "chisq.test")
@@ -118,40 +121,71 @@ data_wide %>% group_by(subject_id) %>%
   group_by(cohort_) %>% tally()
 ```
 
-
-Adherence categories
+## Adherence categories
 
 ```{r}
-data_long_sum <- data_long %>%
-  group_by(subject_id, cohort) %>%
-  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
-            category = case_when(N_drugs == 0 ~ "0 drugs",
-                                 N_adherent == 0 ~ "A - none",
-                                 N_adherent == N_drugs ~ "E - all",
-                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
-                                 N_adherent == N_drugs - 1 ~ "D - all but one",
-                                 TRUE ~ "C - in between"
-                                 ),
-            category_bin = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent")) 
+stopifnot(all(!is.na(data_long$adherent)))
 
-data_long_sum %>%
-  group_by(category) %>%
+data_adherent_sum_fur <- data_long %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(adherent == "yes"), N_nonadherent = sum(adherent == "no"), N_drugs = N_adherent + N_nonadherent)
+
+
+N_no_drugs <- sum(data_adherent_sum_fur$N_drugs == 0)
+stopifnot(N_no_drugs == 1)
+
+subject_id_no_drugs <- data_adherent_sum_fur %>% filter(N_drugs == 0) %>% pull(subject_id)
+
+stopifnot(sum(data_wide$subject_id == subject_id_no_drugs) == 1)
+
+```
+
+Added 2023-10-27:
+
+There was a single patient that had no drugs measured - we exclude them for computing adherence.
+
+We define five "fine" categories as:
+
+- None: Adherent to 0 drugs (regardless of number of drugs measured, i.e. will include patients with just 1 drug evaluated, to which they are not adherent)
+- All: Patients adherent to all drugs we measured
+- Half or less: Patients taking at least 2 drugs we measured and adherent to some, but at most half of the drugs we measured (For patients taking 2 or 3 drugs we measured, this will include only those adherent to exactly one of them)
+- All but one: Patients taking at least 3 drugs we measured and non-adherent to only one of them
+- In between: All the other patients, i.e. patients adherent to more than half of the drugs we measured, but non-adherent to more than one
+
+For most of the comparisons, we collapse all the categories to just two coarse categories "Fully adherent" (corresponds to "All") and "Non-adherent" (collapsing all the other categories).
+
+First, let's show all drugs (incuding furosemide):
+
+```{r}
+data_adherent_cat_fur <- data_adherent_sum_fur %>%
+  filter(N_drugs > 0) %>%
+  mutate(category_with_fur = case_when(N_drugs == 0 ~ "0 drugs",
+                       N_adherent == 0 ~ "A - none",
+                       N_adherent == N_drugs ~ "E - all",
+                       N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                       N_adherent == N_drugs - 1 ~ "D - all but one",
+                       TRUE ~ "C - in between"
+                       ),
+  category_bin_with_fur = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent")) 
+
+data_adherent_cat_fur %>%
+  group_by(category_with_fur) %>%
   summarise(N = n(), .groups = "drop") %>%
   mutate(percent = scales::percent(N / sum(N)))
 
-data_long_sum %>%
-  group_by(category_bin) %>%
+data_adherent_cat_fur %>%
+  group_by(category_bin_with_fur) %>%
   summarise(N = n(), .groups = "drop") %>%
   mutate(percent = scales::percent(N / sum(N)))
 ```
 
-Same as above, but excluding furosemide
+Same as above, but excluding furosemide (which we will use for all the other aderence analyses)
 
 ```{r}
-data_long_sum_no_fur <- data_long %>%
+data_adherent_cat <- data_long %>%
   filter(drug_class != "furosemide") %>%
   group_by(subject_id, cohort) %>%
-  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
+  summarise(N_adherent = sum(adherent == "yes"), N_nonadherent = sum(adherent == "no"), N_drugs = N_adherent + N_nonadherent,
             category = case_when(N_drugs == 0 ~ "0 drugs",
                                  N_adherent == 0 ~ "A - none",
                                  N_adherent == N_drugs ~ "E - all",
@@ -160,14 +194,15 @@ data_long_sum_no_fur <- data_long %>%
                                  TRUE ~ "C - in between"
                                  ),
             category_bin = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent"),
-            .groups = "drop") 
+            .groups = "drop") %>%
+  filter(N_drugs > 0)
 
-data_long_sum_no_fur %>%
+data_adherent_cat %>%
   group_by(category) %>%
   summarise(N = n(), .groups = "drop") %>%
   mutate(percent = scales::percent(N / sum(N)))
 
-data_long_sum_no_fur %>%
+data_adherent_cat %>%
   filter(N_drugs > 0) %>%
   group_by(category_bin) %>%
   summarise(N = n(), .groups = "drop") %>%
@@ -176,12 +211,76 @@ data_long_sum_no_fur %>%
 
 I.e. most people are adherent to all their medications and very few are non-adherent to multiple medications.
 
+Added 2023-10-27: We check how much do those numbers differ between cohorts:
 
-Comparison of clinical and laboratory parameters of adherent and non-adherent patients (excluding furosemide):
+```{r}
+data_adherent_cat %>%
+  filter(N_drugs > 0) %>%
+  group_by(cohort, category) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  group_by(cohort) %>%
+  mutate(percent = scales::percent(N / sum(N))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "percent"))
+
+
+data_adherent_cat %>%
+  filter(N_drugs > 0) %>%
+  group_by(cohort, category_bin) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  group_by(cohort) %>%
+  mutate(percent = scales::percent(N / sum(N))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "percent"))
+```
+
+Indeed it appears that the 2020 cohort had less adherence, which is primarily driven by the increase in the "all but one" category (i.e. people taking more than 2 drugs that are non-adherent to a single drug). A potential explanation is that this increase is due to the longer list of drugs tested in the 2020 cohort.
+
+To check this, we look just at the "all but one" category and see the drug they were not adherent to:
+
+```{r}
+id_cohort_all_but_one <- data_adherent_cat %>% 
+  filter(category == "D - all but one") %>%
+  mutate(id_cohort = paste0(subject_id, "_", cohort)) %>%
+  pull(id_cohort)
+
+all_but_one_nonadherent <- data_long %>% 
+  filter(paste0(subject_id, "_", cohort) %in% id_cohort_all_but_one, has & !adherent_int, drug_class != "furosemide")
+
+stopifnot(length(
+  setdiff(id_cohort_all_but_one, paste0(all_but_one_nonadherent$subject_id, "_", all_but_one_nonadherent$cohort)))
+  == 0)
+
+stopifnot(nrow(all_but_one_nonadherent) == length(id_cohort_all_but_one))
+
+all_but_one_nonadherent %>%
+  group_by(cohort, drug_class) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  group_by(cohort) %>%
+  mutate(percent = scales::percent(N / sum(N))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "percent")) %>%
+  rename(`The only drug class not adhered to` = drug_class)
+```
+
+So we see that most of the drugs not adhered to were the drugs we measured in both cohorts. We can also look specifically for adherence to drugs that were measured in both cohorts:
+
+```{r}
+data_long %>% filter(!is.na(adherent_int)) %>%
+  group_by(drug_class, cohort) %>%
+  summarise(N = n(), adherence = scales::percent(mean(adherent_int))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "adherence")) %>%
+  filter(!is.na(adherence_2018))
+```
+
+
+The adherence is lower in 2020 for all of those, so presumably, this reflects a genuine difference in overall adherence between cohorts.
+
+
+Comparison of clinical and laboratory parameters of adherent and non-adherent patients (excluding furosemide, note a single excluded patient who had no drugs measured):
 
 ```{r, message=FALSE}
 data_table_comparison <- data_table1 %>%
-  inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"), relationship = "one-to-one", unmatched = "error")
+  filter(!(subject_id %in% subject_id_no_drugs)) %>%
+  inner_join(data_adherent_cat, by = c("subject_id", "cohort"), relationship = "one-to-one", unmatched = "error") %>%
+  select(-N_adherent, -N_drugs, -category, -N_nonadherent)
 
 tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test)
 ```
@@ -309,6 +408,13 @@ plot_adherence_by_continuous(data_long, as.numeric(VO2_max))
 
 ```
 
+Added 2023-10-27: diabetes:
+
+```{r}
+plot_adherence_by_discrete(data_long, diabetes)
+```
+
+
 ## Drugs and their expected metabolic effect
 
 Beta blockers should reduce EKG, pulse. Indeed a mild reduction is visible, but only in the 2020 cohort.
@@ -348,35 +454,6 @@ plot_continuous_by_class_adherence(data_long, all_bp_lowering,
                                    diastolic_BP)
 
 ```
-
-## Mortality
-
-```{r}
-data_wide %>% group_by(subject_id) %>% summarise(n_alive = length(unique(alive_2021_12_11))) %>%  filter(n_alive > 1)
-```
-
-
-```{r}
-data_wide %>% group_by(subject_id, cohort) %>% summarise(death = any(alive_2021_12_11 != "ano")) %>%
-  group_by(cohort) %>% summarise(count = n(), sum(death))
-
-```
-
-
-```{r}
-data_wide_sum <- data_wide %>% inner_join(data_long_sum, by = c("subject_id", "cohort"),
-                                          relationship = "one-to-one", unmatched = "error")
-
-data_wide_sum %>% group_by(cohort, category) %>% summarise(count = n(), deaths = sum(alive_2021_12_11 != "ano"), mean_alive = mean(alive_2021_12_11 == "ano"))
-```
-
-
-```{r}
-data_wide %>% group_by(cohort) %>%
-  summarise(count = n(), deaths = sum(alive_2021_12_11 != "ano"), mean_alive = mean(alive_2021_12_11 == "ano"),
-            deaths_low = qbeta(0.025, deaths + 1, count - deaths + 1), deaths_high = qbeta(0.975, deaths + 1, count - deaths + 1))
-```
-
 
 ## Adherence questionnaire
 
@@ -802,39 +879,27 @@ plot_adherence_by_continuous(data_long, non_HDL)
 
 ```
 
-
 ```{r}
-data_long_sum_no_fur <- data_long %>%
-  filter(has) %>%
-  group_by(subject_id, cohort) %>%
-  summarise(N_adherent = sum(has & adherent_int, na.rm = TRUE), N_drugs = sum(has, na.rm = TRUE),
-            N_adherent_no_fur = sum(has & adherent_int & drug_class != "furosemide", na.rm = TRUE), 
-            N_drugs_no_fur = sum(has  & drug_class != "furosemide", na.rm = TRUE),
-            # adherence_category = case_when(N_adherent == N_drugs ~ "C - all",
-            #                      N_drugs > 1 & N_adherent == N_drugs_no_fur - 1 ~ "B - all but one",
-            #                      TRUE ~ "A - nonadherent"
-            #                      ),
-            adherence_category = case_when(N_adherent_no_fur == N_drugs_no_fur ~ "Fully adherent",
-                                 TRUE ~ "Nonadherent"
-                                 ),
-            adherence_category = factor(adherence_category, 
-                                        levels = c("Nonadherent", "Fully adherent"))  )
-
 data_wide_a <- data_wide %>% 
-  inner_join(data_long_sum_no_fur, by = c("subject_id", "cohort"))
+  filter(!(subject_id %in% subject_id_no_drugs)) %>%
+  inner_join(data_adherent_cat, by = c("subject_id", "cohort"),
+             relationship = "one-to-one", unmatched = "error")
 
-if(nrow(data_wide_a) != nrow(data_wide)) {
+if(nrow(data_wide_a) != nrow(data_wide) - length(subject_id_no_drugs)) {
   stop("Bad join")
 }
 ```
 
+
 ```{r}
-adherent_diagnosis_contingency <- data_wide_a %>% group_by(adherence_category, diagnosis_group) %>%
+adherent_diagnosis_contingency <- data_wide_a %>% group_by(category_bin, diagnosis_group) %>%
   tally() %>%
   pivot_wider(names_from = "diagnosis_group", values_from = "n") %>%
-  column_to_rownames("adherence_category") %>%
+  column_to_rownames("category_bin") %>%
   as.matrix()
 
+
+adherent_diagnosis_contingency
 
 chisq.test(adherent_diagnosis_contingency, simulate.p.value = TRUE)
 ```
