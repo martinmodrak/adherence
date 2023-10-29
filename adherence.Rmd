@@ -179,10 +179,10 @@ data_adherent_cat_fur %>%
   mutate(percent = scales::percent(N / sum(N)))
 ```
 
-Same as above, but excluding furosemide (which we will use for all the other aderence analyses)
+Same as above, but excluding furosemide, but including drugs only measured in the 2020 cohort
 
 ```{r}
-data_adherent_cat <- data_long %>%
+data_adherent_cat_non_shared <- data_long %>%
   filter(drug_class != "furosemide") %>%
   group_by(subject_id, cohort) %>%
   summarise(N_adherent = sum(adherent == "yes"), N_nonadherent = sum(adherent == "no"), N_drugs = N_adherent + N_nonadherent,
@@ -197,12 +197,12 @@ data_adherent_cat <- data_long %>%
             .groups = "drop") %>%
   filter(N_drugs > 0)
 
-data_adherent_cat %>%
+data_adherent_cat_non_shared %>%
   group_by(category) %>%
   summarise(N = n(), .groups = "drop") %>%
   mutate(percent = scales::percent(N / sum(N)))
 
-data_adherent_cat %>%
+data_adherent_cat_non_shared %>%
   filter(N_drugs > 0) %>%
   group_by(category_bin) %>%
   summarise(N = n(), .groups = "drop") %>%
@@ -214,7 +214,7 @@ I.e. most people are adherent to all their medications and very few are non-adhe
 Added 2023-10-27: We check how much do those numbers differ between cohorts:
 
 ```{r}
-data_adherent_cat %>%
+data_adherent_cat_non_shared %>%
   filter(N_drugs > 0) %>%
   group_by(cohort, category) %>%
   summarise(N = n(), .groups = "drop") %>%
@@ -223,7 +223,7 @@ data_adherent_cat %>%
   pivot_wider(names_from = "cohort", values_from = c("N", "percent"))
 
 
-data_adherent_cat %>%
+data_adherent_cat_non_shared %>%
   filter(N_drugs > 0) %>%
   group_by(cohort, category_bin) %>%
   summarise(N = n(), .groups = "drop") %>%
@@ -237,7 +237,7 @@ Indeed it appears that the 2020 cohort had less adherence, which is primarily dr
 To check this, we look just at the "all but one" category and see the drug they were not adherent to:
 
 ```{r}
-id_cohort_all_but_one <- data_adherent_cat %>% 
+id_cohort_all_but_one <- data_adherent_cat_non_shared %>% 
   filter(category == "D - all but one") %>%
   mutate(id_cohort = paste0(subject_id, "_", cohort)) %>%
   pull(id_cohort)
@@ -274,7 +274,85 @@ data_long %>% filter(!is.na(adherent_int)) %>%
 The adherence is lower in 2020 for all of those, so presumably, this reflects a genuine difference in overall adherence between cohorts.
 
 
-Comparison of clinical and laboratory parameters of adherent and non-adherent patients (excluding furosemide, note a single excluded patient who had no drugs measured):
+### Only drugs in both cohorts
+
+Added 2023-10-29
+
+```{r}
+both_cohorts_drugs <- data_long %>% filter(!is.na(adherent_int)) %>% select(drug_class, cohort) %>% distinct() %>%
+  group_by(drug_class) %>% summarise(both_cohorts = length(unique(cohort)) == 2) %>% filter(both_cohorts) %>% pull(drug_class)
+```
+
+
+For the main focus on adherence categories we'll limit the look to drugs measured in both cohorts, i.e. `r paste0(both_cohorts_drugs, collapse = ", ")`.
+
+```{r}
+data_adherent_cat_with_zero <- data_long %>%
+  filter(drug_class != "furosemide", drug_class %in% both_cohorts_drugs) %>%
+  group_by(subject_id, cohort) %>%
+  summarise(N_adherent = sum(adherent == "yes"), N_nonadherent = sum(adherent == "no"), N_drugs = N_adherent + N_nonadherent,
+            category = case_when(N_drugs == 0 ~ "0 drugs",
+                                 N_adherent == 0 ~ "A - none",
+                                 N_adherent == N_drugs ~ "E - all",
+                                 N_adherent <= 0.5 * N_drugs ~ "B - half or less",
+                                 N_adherent == N_drugs - 1 ~ "D - all but one",
+                                 TRUE ~ "C - in between"
+                                 ),
+            category_bin = if_else(N_adherent == N_drugs, "Fully adhererent", "Non-adherent"),
+            .groups = "drop") 
+
+N_zero_both <- sum(data_adherent_cat_with_zero$N_drugs == 0)
+
+stopifnot(N_zero_both == 1)
+    
+data_adherent_cat <- data_adherent_cat_with_zero %>%
+  filter(N_drugs > 0)
+
+data_adherent_cat %>%
+  group_by(category) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+
+data_adherent_cat %>%
+  filter(N_drugs > 0) %>%
+  group_by(category_bin) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(percent = scales::percent(N / sum(N)))
+```
+
+As noted above, this still leads to noticeable differences between cohorts:
+
+```{r}
+adherent_cat_by_cohort <- data_adherent_cat %>%
+  filter(N_drugs > 0) %>%
+  group_by(cohort, category) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  group_by(cohort) %>%
+  mutate(percent = scales::percent(N / sum(N))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "percent"))
+
+adherent_cat_by_cohort
+
+set.seed(5682233)
+chisq_adherent_cat_by_cohort <- adherent_cat_by_cohort %>% select(starts_with("N_")) %>% as.matrix() %>% chisq.test(simulate.p.value = TRUE,B = 10000)
+
+adherent_cat_bin_by_cohort <- data_adherent_cat %>%
+  filter(N_drugs > 0) %>%
+  group_by(cohort, category_bin) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  group_by(cohort) %>%
+  mutate(percent = scales::percent(N / sum(N))) %>%
+  pivot_wider(names_from = "cohort", values_from = c("N", "percent"))
+
+adherent_cat_bin_by_cohort
+
+chisq_adherent_cat_bin_by_cohort <- adherent_cat_bin_by_cohort %>% select(starts_with("N_")) %>% as.matrix() %>% chisq.test()
+```
+
+
+The differences float around the standard significant threshold with Chi-squared p-values of `r round(chisq_adherent_cat_by_cohort$p.value, 2)` and `r round(chisq_adherent_cat_bin_by_cohort$p.value, 2)` for the fine categories and for the binary categorization respectively.
+
+Comparison of clinical and laboratory parameters of adherent and non-adherent patients (only drugs measured in both cohorts, note a single excluded patient who had no drugs measured):
 
 ```{r, message=FALSE}
 data_table_comparison <- data_table1 %>%
@@ -303,18 +381,25 @@ data_wide %>% group_by(subject_id) %>%
 ```
 
 
-First let's look at the drug combinations in use:
+First let's look at the drug combinations in use, separately in both cohorts:
 
-TODO: upset - by cohort? Or merge (currently, imputing NAs as 0)
 
 ```{r, fig.width = 8}
-data_upset <- data_wide %>% 
-  mutate(subject_id = paste(subject_id, cohort, sep = "_")) %>%
-  select(subject_id, starts_with("has.")) %>%
-  mutate(across(starts_with("has."), ~ replace_na(.x, 0L)))
-names(data_upset) <- gsub("^has.", "", names(data_upset))
+for(coh in unique(data_wide$cohort)) {
+  data_upset <- data_wide %>% 
+    filter(cohort == coh) %>%
+    mutate(subject_id = paste(subject_id, cohort, sep = "_")) %>%
+    select(subject_id, starts_with("has.")) %>%
+    mutate(across(starts_with("has."), ~ replace_na(.x, 0L)))
+  names(data_upset) <- gsub("^has.", "", names(data_upset))
   
-upset(as.data.frame(data_upset), sets = names(data_upset)[2:ncol(data_upset)], order.by = "freq", nintersects = NA, nsets = 10)
+  sets_all <- names(data_upset)[2:ncol(data_upset)]
+  sets_present_indices <- (data_upset[,sets_all] %>% as.matrix() %>% colSums()) > 0
+  sets_to_show <- sets_all[sets_present_indices]
+  
+  upset(as.data.frame(data_upset), sets = sets_to_show, order.by = "freq", nintersects = NA, nsets = 10) %>% print()
+  grid::grid.text(paste0("Drug combinations ", coh),x = 0.65, y=0.95, gp=grid::gpar(fontsize=20))
+}
 ```
 
 And the overall adherence associated with each drug class (observed proportion - point, 95% credible interval - line, number of users - label):
