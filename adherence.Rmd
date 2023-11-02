@@ -279,12 +279,13 @@ The adherence is lower in 2020 for all of those, so presumably, this reflects a 
 Added 2023-10-29
 
 ```{r}
-both_cohorts_drugs <- data_long %>% filter(!is.na(adherent_int)) %>% select(drug_class, cohort) %>% distinct() %>%
-  group_by(drug_class) %>% summarise(both_cohorts = length(unique(cohort)) == 2) %>% filter(both_cohorts) %>% pull(drug_class)
+both_cohorts_RAAS <- c("ARNI", "ACEi","sartan")
+both_cohorts_other <- c("BB", "MRA")
+both_cohorts_drugs <- c(both_cohorts_RAAS, both_cohorts_other)
 ```
 
 
-For the main focus on adherence categories we'll limit the look to drugs measured in both cohorts, i.e. `r paste0(both_cohorts_drugs, collapse = ", ")`.
+For the main focus on adherence categories we'll limit the look to drugs classes measured in both cohorts, i.e. `r paste0(both_cohorts_other, collapse = ", ")`  and RAAS blockers (`r paste0(both_cohorts_RAAS, collapse = ", ")`).
 
 ```{r}
 data_adherent_cat_with_zero <- data_long %>%
@@ -347,10 +348,22 @@ adherent_cat_bin_by_cohort <- data_adherent_cat %>%
 adherent_cat_bin_by_cohort
 
 chisq_adherent_cat_bin_by_cohort <- adherent_cat_bin_by_cohort %>% select(starts_with("N_")) %>% as.matrix() %>% chisq.test()
+
+p_text <- function(p, p_digits = 2) {
+  if(p < 0.001) {
+    "p < 0.001"
+  } else if(p < 0.01) {
+    "p < 0.01"
+  } else {
+    paste0("p = ", round(p, p_digits))  
+  }
+}
+
+
 ```
 
 
-The differences float around the standard significant threshold with Chi-squared p-values of `r round(chisq_adherent_cat_by_cohort$p.value, 2)` and `r round(chisq_adherent_cat_bin_by_cohort$p.value, 2)` for the fine categories and for the binary categorization respectively.
+The differences are statistically significant with Chi-squared p-values of `r p_text(chisq_adherent_cat_by_cohort$p.value)` and `r p_text(chisq_adherent_cat_bin_by_cohort$p.value)` for the fine categories and for the binary categorization respectively.
 
 Comparison of clinical and laboratory parameters of adherent and non-adherent patients (only drugs measured in both cohorts, note a single excluded patient who had no drugs measured):
 
