@@ -350,7 +350,7 @@ plot_VO2_peak
 
 
 ggsave(file.path(cache_dir, "VO2_peak_thresholds.pdf"), plot_VO2_peak, width = 8, height = 4)
-ggsave(file.path(cache_dir, "VO2_max_thresholds.svg"), plot_VO2_peak, width = 8, height = 4)
+ggsave(file.path(cache_dir, "VO2_peak_thresholds.svg"), plot_VO2_peak, width = 8, height = 4)
 ```
 
 ```{r}
@@ -576,7 +576,12 @@ fit_adherence <- brm(NYHA_spiro ~ log(VO2_peak) + adherence_category, family = c
 ```
 
 ```{r, fig.cap = "Summary of the constant shift model. Each line is a posterior sample showing association between VO~2~ peak and average  NYHA. The thick light blue line shows expected output if NYHA based on VO~2~ peak exactly corresponded with  NYHA."}
-plot_fitted_trend(fit_adherence, adherence = TRUE)
+plot_trend_adherence <-  plot_fitted_trend(fit_adherence, adherence = TRUE)
+
+plot_trend_adherence
+
+ggsave(file.path(cache_dir, "trend_adherence.pdf"), plot_trend_adherence, width = 8, height = 4)
+ggsave(file.path(cache_dir, "trend_adherence.svg"), plot_trend_adherence, width = 8, height = 4)
 ```
 
 We see that the data are consistent with non-adherent patients having both higher and lower average NYHA with the same VO~2~ peak. While it is possible that we could determine the sign of the difference with more data, the current data already allow us to rule out that there is a substantial difference. One way to quantify this is to look at the predictions for difference in mean transitional NYHA class across different VO~2~ peak levels, here a difference of 1 would mean an average increase of one transitional class (e.g., from "1-2" to "2" or from "2-3" to "3")
