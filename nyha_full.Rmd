@@ -294,7 +294,7 @@ In both variants of the plots we see that there is substantial number of patient
 
 
 ```{r}
-data_nyha %>% 
+concodrant_counts <- data_nyha %>% 
   rowwise() %>%
   mutate(`NYHA vs. Weber status` = 
            case_when(grepl(Weber_spiro, as.character(NYHA_spiro)) ~ "Concordant",
@@ -304,9 +304,22 @@ data_nyha %>%
   # filter(`NYHA status` == "Objective higher") %>%
   # select(Weber_spiro, NYHA_spiro)
   
-  group_by(`NYHA vs. Weber status`) %>% tally() %>%
+  group_by(`NYHA vs. Weber status`) %>% tally() %>% mutate(fraction = n / sum(n), percent = scales::percent(fraction, accuracy = 1))
+
+concodrant_counts %>% select(-fraction) %>%
   table_format(caption = "Count of patients based on difference between NYHA and Weber based on VO~2~ peak")
                                                
+```
+
+```{r, fig.width = 8, fig.height=4}
+concordant_plot <- concodrant_counts %>% ggplot(aes(x = `NYHA vs. Weber status`, y = fraction, fill = `NYHA vs. Weber status`)) + geom_bar(stat = "identity", width = 0.5) + geom_text(aes(label = percent), nudge_y = 0.05) +  scale_fill_brewer(type = "qual", guide = "none") +
+  scale_x_discrete("", labels = c("Subjective and objective\nfunctional class concordant", "Functional class objectively\nmeasured by VO2 max\nhigher than subjective\nNYHA class","Functional class objectively\nmeasured by VO2 max\nlower than subjective\nNYHA class")) + scale_y_continuous("", labels = scales::percent, breaks = 0:6 / 10) + theme(panel.grid.major.y = element_line(colour = "#e0e0e0", size = 1)) + coord_cartesian(expand = FALSE, ylim = c(0, 0.65), xlim = c(0.5,3.5))
+
+concordant_plot
+
+ggsave(file.path(cache_dir, "concordant_bars.pdf"), concordant_plot, width = 8, height = 4)
+ggsave(file.path(cache_dir, "concordant_bars.svg"), concordant_plot, width = 8, height = 4)
+
 ```
 
 
@@ -334,6 +347,10 @@ plot_VO2_peak <- data_nyha %>%
   theme(panel.grid.minor.x = element_line(colour = "lightgray"))
 
 plot_VO2_peak
+
+
+ggsave(file.path(cache_dir, "VO2_peak_thresholds.pdf"), plot_VO2_peak, width = 8, height = 4)
+ggsave(file.path(cache_dir, "VO2_max_thresholds.svg"), plot_VO2_peak, width = 8, height = 4)
 ```
 
 ```{r}

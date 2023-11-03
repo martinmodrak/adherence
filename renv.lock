@@ -1230,11 +1230,8 @@
     },
     "renv": {
       "Package": "renv",
-      "Version": "0.16.0",
-      "OS_type": NA,
-      "Repository": "CRAN",
-      "Source": "Repository",
-      "Requirements": []
+      "Version": "1.0.3",
+      "Source": "Repository"
     },
     "reprex": {
       "Package": "reprex",
