@@ -371,9 +371,14 @@ Comparison of clinical and laboratory parameters of adherent and non-adherent pa
 data_table_comparison <- data_table1 %>%
   filter(!(subject_id %in% subject_id_no_drugs)) %>%
   inner_join(data_adherent_cat, by = c("subject_id", "cohort"), relationship = "one-to-one", unmatched = "error") %>%
-  select(-N_adherent, -N_drugs, -category, -N_nonadherent)
+  select(-N_adherent, -N_drugs, -category, -N_nonadherent, -subject_id, -ekg_freq, )
 
-tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test)
+pvalue_fun_BH <- function(ps)  {
+  print(ps)
+  style_pvalue(p.adjust(ps, method = "BH"))
+}
+
+tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test, pvalue_fun = pvalue_fun_BH)
 ```
 
 
@@ -594,13 +599,15 @@ plot_adherence_by_discrete(data_long %>% mutate(q_total = questionnaire_1 - ques
 
 # Modelling
 
+For modelling, we ignore furosemide and other diuretics.
+
 ## Adherence by factors
 
 It turns out that a model incorporating the drug class and some between-subject variability is about as much as we can reliably get from the data and so
 we cannot work very usefully with individual factors (but see the Bad Health section below)
 
 ```{r}
-data_for_model1 <- data_long %>% filter(has, !is.na(adherent_int)) 
+data_for_model1 <- data_long %>% filter(has, !is.na(adherent_int),  !(drug_class %in% c("furosemide", "other_diuretics"))) 
 
 if(any(is.na(data_for_model1$adherent_int))) {
   stop("NAs")
@@ -631,6 +638,16 @@ if(run_pp_checks) {
 ```
 
 
+```{r}
+data_for_model1_both_cohorts <- data_for_model1 %>% filter(drug_class %in% both_cohorts_drugs) 
+
+fit1_both_cohorts <- brm(adherent_int ~ (1 | drug_class) + (1 | subject_id) + cohort, family = "bernoulli", data = data_for_model1_both_cohorts, prior = priors1, 
+            file = paste0(cache_dir, "/fit1_both_cohorts"), file_refit = "on_change", refresh = 500, control = list(adapt_delta = 0.99))
+
+summary(fit1_both_cohorts)
+ranef(fit1_both_cohorts)$drug_class
+```
+
 TODO:
 plot observed adherence vs. fit1 predicted adherence
 
@@ -654,6 +671,14 @@ if(run_pp_checks) {
   ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = data_for_model1$NYHA)
   ppc_bars_grouped(data_for_model1$adherent_int, yrep = preds, group = replace_na(data_for_model1$EF, "NA"))
 }
+```
+
+```{r}
+fit_simple_both_cohorts <- brm(adherent_int ~ (1 | drug_class) + cohort, family = "bernoulli", data = data_for_model1_both_cohorts, prior = priors1, 
+            file = paste0(cache_dir, "/fit_simple_both_cohorts"), file_refit = "on_change", refresh = 500, control = list(adapt_delta = 0.99))
+
+summary(fit_simple_both_cohorts)
+ranef(fit_simple_both_cohorts)$drug_class
 ```
 
 
@@ -746,7 +771,8 @@ mod_badhealth <- cmdstan_model("badhealth.stan")
 
 ```{r, results = 'hide'}
 data_for_badhealth <- data_for_model1 %>% 
-  mutate(measurement_id = paste(subject_id, cohort, sep = "_"))
+  mutate(measurement_id = paste(subject_id, cohort, sep = "_"),
+         drug_class = factor(drug_class))
 
 measurement_id_map <- 1:length(unique(data_for_badhealth$measurement_id))
 names(measurement_id_map) <- unique(data_for_badhealth$measurement_id)
@@ -768,7 +794,7 @@ data_badhealth_stan <- list(
   N = nrow(data_for_badhealth),
   adherent = data_for_badhealth$adherent_int,
   N_classes = length(unique(data_for_badhealth$drug_class)),
-  classes = factor(data_for_badhealth$drug_class),
+  classes = data_for_badhealth$drug_class,
   N_measurements = length(measurement_id_map),
   measurement = measurement_id_map[as.character(data_for_badhealth$measurement_id)],
   N_NYHA = length(levels(patient_data$NYHA)),
@@ -806,6 +832,143 @@ we are primarily interested in the "badhealth_slope" variable, which is the asso
 The value of the bad health hidden variable can be interpreted e.g by it's association to NYHA levels - the "nyha_thres" variables are the thresholds for NYHA levels (we observe 6 NYHA levels: `r paste0(levels(patient_data$NYHA), collapse = ", ")`). So bad health < -1.75 would be most often (but not always) associated with NYHA 1 while bad health between 1.9 and 4.4 would be associated with NYHA 3.
 
 
+```{r}
+badhealth_rvars <- posterior::as_draws_rvars(fit_badhealth$draws())
+
+#pred_rvar_df <- tidybayes::spread_rvars(badhealth_rvars, class_intercept[drug_class], cohort_diff, badhealth_slope, adherent_intercept)
+
+mean_bad_health <- mean(badhealth_rvars$badhealth)
+
+
+#pred_df <- crossing(drug_class = 1:data_badhealth_stan$N_classes, cohort = c(0,1), badhealth = seq(min(mean_bad_health$badhealth), max(mean_bad_health$badhealth), length.out = 50))
+
+pred_df <- crossing(data.frame(drug_class_id = 1:data_badhealth_stan$N_classes, drug_class = levels(data_for_badhealth$drug_class)), cohort = c(0,1), badhealth = seq(min(mean_bad_health), max(mean_bad_health), length.out = 50)) %>% 
+  filter(cohort == 1 | (drug_class %in% both_cohorts_drugs))
+
+pred_raw_rvar <-  badhealth_rvars$adherent_intercept  + badhealth_rvars$class_intercept[pred_df$drug_class_id] + badhealth_rvars$badhealth_slope * pred_df$badhealth + badhealth_rvars$cohort_diff * pred_df$cohort
+pred_rvar <- posterior::rfun(plogis)(pred_raw_rvar)
+pred_means <- mean(pred_rvar)
+pred_qs <- quantile(pred_rvar, prob = c(0.025, 0.975))
+
+pred_df_vals <- pred_df %>% mutate(pred = pred_means, low = pred_qs[1,], high = pred_qs[2,],
+                              cohort = if_else(cohort == 0, "2018", "2020"),
+                              )
+
+
+                                        
+adherence_for_pred <- data_for_badhealth %>% select(measurement_id, drug_class, adherent_int, cohort) %>% 
+  mutate(measurement_id = measurement_id_map[measurement_id], badhealth = mean_bad_health[measurement_id])
+```
+
+```{r, fig.width=8, fig.height=8}
+pred_df_vals %>% ggplot(aes(x = badhealth, y = pred, ymin = low, ymax = high, color = cohort, fill = cohort)) + geom_ribbon(alpha = 0.3, color = "transparent") + geom_line() + geom_point(aes(x = badhealth, y = adherent_int , shape = cohort, color = cohort), data = adherence_for_pred, inherit.aes = FALSE, position = position_jitter(height = 0.05), alpha = 0.5) +       scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
+                       breaks = c(0,0.5,1)) +
+  scale_shape_cohort + scale_fill_cohort + scale_colour_cohort +
+  facet_wrap(drug_class~cohort) 
+```
+
+```{r}
+mean_NYHA_thres <- mean(badhealth_rvars$nyha_thres)
+
+pred_overall_df <- crossing(cohort = c(0,1), badhealth = seq(min(mean_bad_health), max(mean_bad_health), length.out = 50))
+
+pred_overall_raw_rvar <-  badhealth_rvars$adherent_intercept + badhealth_rvars$badhealth_slope * pred_overall_df$badhealth + badhealth_rvars$cohort_diff * pred_overall_df$cohort
+pred_overall_rvar <- posterior::rfun(plogis)(pred_overall_raw_rvar)
+pred_overall_means <- mean(pred_overall_rvar)
+pred_overall_qs <- quantile(pred_overall_rvar, prob = c(0.025, 0.975))
+
+pred_overall_df_vals <- pred_overall_df %>% mutate(pred = pred_overall_means, low = pred_overall_qs[1,], high = pred_overall_qs[2,],
+                              cohort = if_else(cohort == 0, "2018", "2020"),
+                              )
+
+
+                                        
+adherence_for_pred_overall <- data_for_badhealth %>% select(measurement_id, adherent_int, cohort) %>% group_by(measurement_id, cohort) %>% summarise(adherent = mean(adherent_int), .groups = "drop")  %>% 
+  mutate(measurement_id = measurement_id_map[measurement_id], badhealth = mean_bad_health[measurement_id])
+```
+
+```{r}
+nyha2_index <- which(levels(data_for_badhealth$NYHA) == "2") 
+
+pred_overall_df_vals %>% ggplot(aes(x = badhealth, y = pred, ymin = low, ymax = high, color = cohort, fill = cohort)) + geom_ribbon(alpha = 0.3, color = "transparent") + geom_line() + geom_point(aes(x = badhealth, y = adherent , shape = cohort, color = cohort), data = adherence_for_pred_overall, inherit.aes = FALSE, position = position_jitter(height = 0.05), alpha = 0.5) +       scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
+                       breaks = c(0,0.5,1)) +
+  scale_shape_cohort + scale_fill_cohort + scale_colour_cohort +
+  facet_wrap(~cohort) + annotate(geom_label(text = "NYHA1"))
+```
+
+```{r}
+badhealth_for_pred = seq(min(mean_bad_health), max(mean_bad_health), length.out = 50)
+
+n_draws_for_pred <- posterior::ndraws(badhealth_rvars$adherent_intercept)
+cdf_nyha <- array(NA_real_, dim = c(data_badhealth_stan$N_NYHA + 1, n_draws_for_pred,
+                                     length(badhealth_for_pred)))
+
+cdf_nyha[1,,] <- 0
+
+for(i in 1:(data_badhealth_stan$N_NYHA - 1)) {
+  rep_thres <- matrix(posterior::draws_of(badhealth_rvars$nyha_thres[i]), nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
+  rep_badhealth <- matrix(badhealth_for_pred, byrow = TRUE, nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
+
+  cdf_nyha[i + 1,,] <-  plogis(rep_thres - rep_badhealth)
+}
+
+cdf_nyha[data_badhealth_stan$N_NYHA + 1, , ] <- 1
+prob_nyha <- apply(cdf_nyha, MARGIN = c(2,3), FUN = diff)
+
+mean_nyha <- apply(sweep(prob_nyha, MARGIN = 1, STATS = 1:data_badhealth_stan$N_NYHA, FUN = "*"), FUN = sum, MARGIN = c(2,3))
+
+pred_mean_nyha <- apply(mean_nyha, FUN = mean, MARGIN = 2) 
+pred_q_nyha <- apply(mean_nyha, FUN = quantile, MARGIN = 2, probs = c(0.025, 0.975)) 
+
+
+obs_nyha_for_pred <- data.frame(NYHA = as.integer(data_badhealth_stan$NYHA), badhealth = mean_bad_health, cohort = if_else(data_badhealth_stan$cohort == 0, "2018", "2020")) 
+
+data.frame(badhealth = badhealth_for_pred, NYHA = pred_mean_nyha, low = pred_q_nyha[1,], high = pred_q_nyha[2,]) %>%
+  ggplot(aes(x = badhealth, y = NYHA)) +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.3) +
+  geom_line() +
+  geom_point(aes(shape = cohort, color = cohort), data = obs_nyha_for_pred, position = position_jitter(height = 0.1), alpha = 0.5) +
+  scale_colour_cohort + scale_shape_cohort +
+  scale_y_continuous("NYHA", breaks = 1:data_badhealth_stan$N_NYHA, labels = levels(data_for_badhealth$NYHA))
+```
+
+```{r}
+badhealth_for_pred = seq(min(mean_bad_health), max(mean_bad_health), length.out = 50)
+
+n_draws_for_pred <- posterior::ndraws(badhealth_rvars$adherent_intercept)
+cdf_nyha <- array(NA_real_, dim = c(data_badhealth_stan$N_NYHA + 1, n_draws_for_pred,
+                                     length(badhealth_for_pred)))
+
+cdf_nyha[1,,] <- 0
+
+for(i in 1:(data_badhealth_stan$N_NYHA - 1)) {
+  rep_thres <- matrix(posterior::draws_of(badhealth_rvars$nyha_thres[i]), nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
+  rep_badhealth <- matrix(badhealth_for_pred, byrow = TRUE, nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
+
+  cdf_nyha[i + 1,,] <-  plogis(rep_thres - rep_badhealth)
+}
+
+cdf_nyha[data_badhealth_stan$N_NYHA + 1, , ] <- 1
+prob_nyha <- apply(cdf_nyha, MARGIN = c(2,3), FUN = diff)
+
+mean_nyha <- apply(sweep(prob_nyha, MARGIN = 1, STATS = 1:data_badhealth_stan$N_NYHA, FUN = "*"), FUN = sum, MARGIN = c(2,3))
+
+pred_mean_nyha <- apply(mean_nyha, FUN = mean, MARGIN = 2) 
+pred_q_nyha <- apply(mean_nyha, FUN = quantile, MARGIN = 2, probs = c(0.025, 0.975)) 
+
+
+obs_nyha_for_pred <- data.frame(NYHA = as.integer(data_badhealth_stan$NYHA), badhealth = mean_bad_health, cohort = if_else(data_badhealth_stan$cohort == 0, "2018", "2020")) 
+
+data.frame(badhealth = badhealth_for_pred, NYHA = pred_mean_nyha, low = pred_q_nyha[1,], high = pred_q_nyha[2,]) %>%
+  ggplot(aes(x = badhealth, y = NYHA)) +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.3) +
+  geom_line() +
+  geom_point(aes(shape = cohort, color = cohort), data = obs_nyha_for_pred, position = position_jitter(height = 0.1), alpha = 0.5) +
+  scale_colour_cohort + scale_shape_cohort +
+  scale_y_continuous("NYHA", breaks = 1:data_badhealth_stan$N_NYHA, labels = levels(data_for_badhealth$NYHA))
+```
+
+
 TODO: maybe show difference in adherence from "best" to "worst" patient?
 
 ```{r}
@@ -818,7 +981,6 @@ The model assumes the worst health is observed in patients ID `r worst_health_me
 
 ```{r}
 if(run_pp_checks) {
-  badhealth_rvars <- posterior::as_draws_rvars(fit_badhealth$draws())
   linpred_adherent <- badhealth_rvars$adherent_intercept + badhealth_rvars$class_intercept[data_badhealth_stan$classes] + 
     badhealth_rvars$badhealth_slope * badhealth_rvars$badhealth[data_badhealth_stan$measurement] 
   
@@ -846,7 +1008,9 @@ if(run_pp_checks) {
 ```{r}
 if(run_pp_checks) {
   linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_rvars$NT_proBNP_slope * badhealth_rvars$badhealth
+
   pred_NT_proBNP <- posterior::draws_of(posterior::rvar_rng(rlnorm, n = data_badhealth_stan$N_measurements,  linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
+
   
   ppc_dens_overlay(log(data_badhealth_stan$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]))
   ppc_dens_overlay_grouped(log(data_badhealth_stan$NT_proBNP), log(pred_NT_proBNP[sample(1:4000, 50),]), group = fct_collapse(patient_data$NYHA, "3-4" = c("3", "3-4")))
@@ -858,10 +1022,11 @@ if(run_pp_checks) {
   }
   
   pred_NYHA <- posterior::draws_of(pred_NYHA)
-  obs_NYHA <- as.integer(data_badhealth_stan$NYHA)
+
+    obs_NYHA <- as.integer(data_badhealth_stan$NYHA)
   
   ppc_bars(obs_NYHA, pred_NYHA)
-  ppc_bars_grouped(obs_NYHA, pred_NYHA, group = cut(log(patient_data$lab_NT_proBNP), 4))
+  ppc_bars_grouped(obs_NYHA[!data_badhealth_stan$NT_proBNP_missing], pred_NYHA[,!data_badhealth_stan$NT_proBNP_missing], group = cut(log(data_badhealth_stan$NT_proBNP[!data_badhealth_stan$NT_proBNP_missing]), 4))
 }
 ```
 
@@ -888,7 +1053,7 @@ if(run_pp_checks) {
 
 ## Adherence questionnaire
 
-Q1, Q3, Q4 - affirmitive anwer -> less adherence
+Q1, Q3, Q4 - affirmitive answer -> less adherence
 Q2 - affirmitive answer -> more adherence
 
 First, let's try a model excluding Q3 and Q4
@@ -924,7 +1089,7 @@ We are left with substantial uncertainty about even the sign (let alone magnitud
 Another way to look at the same result is to predict the expected absolute difference in adherence for a group of patients that responded to both questions by indicating high adherence and a group of patients responded to both questions by indicating low adherence. While our model assumes the same relative effect on the log odds scale for all drugs, the absolute effect can differ between drugs due to their differing baseline adherence. Here's a graphical summary showing the posterior distribution and the central 50% and 95% credible intervals:
 
 ```{r}
-q_pred <- crossing(data.frame(drug_class = c("BB", "ARNI", "statin", "furosemide")),
+q_pred <- crossing(data.frame(drug_class = c("BB", "ARNI", "statin")),
                    data.frame(questionnaire_1 = c(0, 1), questionnaire_2 = c(1,0), label = factor(c(1,2), levels = 2:1, labels = c("Low", "High")))) %>% tidybayes::add_epred_draws(fit_questionnaire) %>%
   group_by(drug_class, .draw) %>%
   mutate(epred_diff = .epred[label == "High"] - .epred[label == "Low"]) %>%
