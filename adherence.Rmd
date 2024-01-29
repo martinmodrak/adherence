@@ -374,13 +374,29 @@ data_table_comparison <- data_table1 %>%
   select(-N_adherent, -N_drugs, -category, -N_nonadherent, -subject_id, -ekg_freq, )
 
 pvalue_fun_BH <- function(ps)  {
-  print(ps)
   style_pvalue(p.adjust(ps, method = "BH"))
 }
 
-tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test, pvalue_fun = pvalue_fun_BH)
+tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %>% add_p(test = tbl1_test, pvalue_fun = pvalue_fun_BH) 
 ```
 
+
+
+## Re-enrolled patients
+
+```{r}
+data_long %>% 
+  filter(!is.na(adherent_int)) %>%
+  group_by(subject_id, drug_class) %>%
+  filter(n() > 1) %>%
+  summarise(adherence_change = 
+              case_when(length(unique(adherent_int)) == 1 ~ "identical",
+                        adherent_int[cohort == "2018"] == 1 ~ "become non-adherent",
+                        adherent_int[cohort == "2018"] == 0 ~ "become adherent")) %>%
+  group_by(drug_class, adherence_change) %>% 
+  tally()
+
+```
 
 
 
@@ -925,47 +941,37 @@ obs_nyha_for_pred <- data.frame(NYHA = as.integer(data_badhealth_stan$NYHA), bad
 
 data.frame(badhealth = badhealth_for_pred, NYHA = pred_mean_nyha, low = pred_q_nyha[1,], high = pred_q_nyha[2,]) %>%
   ggplot(aes(x = badhealth, y = NYHA)) +
-  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.3) +
-  geom_line() +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.3, fill = "blue") +
+  geom_line(color = "blue") +
   geom_point(aes(shape = cohort, color = cohort), data = obs_nyha_for_pred, position = position_jitter(height = 0.1), alpha = 0.5) +
   scale_colour_cohort + scale_shape_cohort +
   scale_y_continuous("NYHA", breaks = 1:data_badhealth_stan$N_NYHA, labels = levels(data_for_badhealth$NYHA))
+
+#TODO možná přímo zobrazit CDF?
 ```
 
 ```{r}
-badhealth_for_pred = seq(min(mean_bad_health), max(mean_bad_health), length.out = 50)
+linpred_NT_proBNP <- badhealth_rvars$NT_proBNP_intercept + badhealth_for_pred * badhealth_rvars$NT_proBNP_slope
 
-n_draws_for_pred <- posterior::ndraws(badhealth_rvars$adherent_intercept)
-cdf_nyha <- array(NA_real_, dim = c(data_badhealth_stan$N_NYHA + 1, n_draws_for_pred,
-                                     length(badhealth_for_pred)))
+qlnorm_rvar <- posterior::rfun(qlnorm)
 
-cdf_nyha[1,,] <- 0
+pred_NT_proBNP <- data.frame(
+  badhealth = badhealth_for_pred,
+  NT_proBNP = mean(exp(linpred_NT_proBNP)),
+  low = mean(qlnorm_rvar(0.025, linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd)),
+  high = mean(qlnorm_rvar(0.975, linpred_NT_proBNP, badhealth_rvars$NT_proBNP_sd))
+)
 
-for(i in 1:(data_badhealth_stan$N_NYHA - 1)) {
-  rep_thres <- matrix(posterior::draws_of(badhealth_rvars$nyha_thres[i]), nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
-  rep_badhealth <- matrix(badhealth_for_pred, byrow = TRUE, nrow = n_draws_for_pred, ncol = length(badhealth_for_pred))
+obs_NT_proBNP_for_pred <- data.frame(NT_proBNP = data_badhealth_stan$NT_proBNP, badhealth = mean_bad_health, cohort = if_else(data_badhealth_stan$cohort == 0, "2018", "2020")) %>%
+  filter(!data_badhealth_stan$NT_proBNP_missing)
 
-  cdf_nyha[i + 1,,] <-  plogis(rep_thres - rep_badhealth)
-}
-
-cdf_nyha[data_badhealth_stan$N_NYHA + 1, , ] <- 1
-prob_nyha <- apply(cdf_nyha, MARGIN = c(2,3), FUN = diff)
-
-mean_nyha <- apply(sweep(prob_nyha, MARGIN = 1, STATS = 1:data_badhealth_stan$N_NYHA, FUN = "*"), FUN = sum, MARGIN = c(2,3))
-
-pred_mean_nyha <- apply(mean_nyha, FUN = mean, MARGIN = 2) 
-pred_q_nyha <- apply(mean_nyha, FUN = quantile, MARGIN = 2, probs = c(0.025, 0.975)) 
-
-
-obs_nyha_for_pred <- data.frame(NYHA = as.integer(data_badhealth_stan$NYHA), badhealth = mean_bad_health, cohort = if_else(data_badhealth_stan$cohort == 0, "2018", "2020")) 
-
-data.frame(badhealth = badhealth_for_pred, NYHA = pred_mean_nyha, low = pred_q_nyha[1,], high = pred_q_nyha[2,]) %>%
-  ggplot(aes(x = badhealth, y = NYHA)) +
+pred_NT_proBNP %>%
+  ggplot(aes(x = badhealth, y = NT_proBNP)) +
   geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.3) +
   geom_line() +
-  geom_point(aes(shape = cohort, color = cohort), data = obs_nyha_for_pred, position = position_jitter(height = 0.1), alpha = 0.5) +
+  geom_point(aes(shape = cohort, color = cohort), data = obs_NT_proBNP_for_pred, alpha = 0.5) +
   scale_colour_cohort + scale_shape_cohort +
-  scale_y_continuous("NYHA", breaks = 1:data_badhealth_stan$N_NYHA, labels = levels(data_for_badhealth$NYHA))
+  scale_y_log10("NT_proBNP")
 ```
 
 
