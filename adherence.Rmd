@@ -385,7 +385,7 @@ tbl_summary(data_table_comparison, by = category_bin, statistic = tbl1_stats)  %
 ## Re-enrolled patients
 
 ```{r}
-data_long %>% 
+re_enrolled_summary <- data_long %>% 
   filter(!is.na(adherent_int)) %>%
   group_by(subject_id, drug_class) %>%
   filter(n() > 1) %>%
@@ -909,7 +909,7 @@ nyha2_index <- which(levels(data_for_badhealth$NYHA) == "2")
 pred_overall_df_vals %>% ggplot(aes(x = badhealth, y = pred, ymin = low, ymax = high, color = cohort, fill = cohort)) + geom_ribbon(alpha = 0.3, color = "transparent") + geom_line() + geom_point(aes(x = badhealth, y = adherent , shape = cohort, color = cohort), data = adherence_for_pred_overall, inherit.aes = FALSE, position = position_jitter(height = 0.05), alpha = 0.5) +       scale_y_continuous("Proportion adherent", labels = scales::label_percent(),
                        breaks = c(0,0.5,1)) +
   scale_shape_cohort + scale_fill_cohort + scale_colour_cohort +
-  facet_wrap(~cohort) + annotate(geom_label(text = "NYHA1"))
+  facet_wrap(~cohort) 
 ```
 
 ```{r}
