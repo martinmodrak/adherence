@@ -10,8 +10,11 @@ date: "Version: `r format(Sys.time(), '%Y-%m-%d')`"
 ---
 
 ```{r setup, message=FALSE, echo = FALSE, results='hide', warning = FALSE}
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
 library(readxl)
+library(forcats)
 library(UpSetR)
 library(brms)
 library(cmdstanr)
@@ -546,6 +549,21 @@ Note in all plots we have "no",  "yes" for adherence and "N/M" (not measured) wh
 plot_continuous_by_class_adherence(data_long, "BB", ekg_freq, "EKG frequency")
 plot_continuous_by_class_adherence(data_long, "BB", pulse)
 
+# Explicit data for poster
+data_long |> filter(drug_class == "BB") |> 
+ mutate(adherent = fct_recode(adherent, "N/M" = "cannot_measure", "N/T" = "not_using"),
+        adherent = fct_relevel(adherent, "no", "N/M", "N/T", "yes")) |> 
+  filter(!is.na(ekg_freq)) |> 
+  group_by(cohort, adherent) |> 
+  summarise(EKG_median = median(ekg_freq), EKG_IQR = IQR(ekg_freq), EKG_min = min(ekg_freq), EKG_max = max(ekg_freq))
+
+data_BB_test <- data_long |> filter(drug_class == "BB", !is.na(ekg_freq), adherent %in% c("yes","no"))
+t_2018 <- t.test(log(ekg_freq) ~ adherent, data_BB_test |> filter(cohort == "2018"))
+t_2018
+exp(t_2018$conf.int)
+t_2020 <- t.test(log(ekg_freq) ~ adherent, data_BB_test |> filter(cohort == "2020"))
+t_2020
+exp(t_2020$conf.int)
 
 ```
 
@@ -1164,7 +1182,7 @@ if(nrow(data_wide_a) != nrow(data_wide) - length(subject_id_no_drugs)) {
 adherent_diagnosis_contingency <- data_wide_a %>% group_by(category_bin, diagnosis_group) %>%
   tally() %>%
   pivot_wider(names_from = "diagnosis_group", values_from = "n") %>%
-  column_to_rownames("category_bin") %>%
+  tibble::column_to_rownames("category_bin") %>%
   as.matrix()
 
 

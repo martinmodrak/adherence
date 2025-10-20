@@ -8,7 +8,9 @@ date: '`r format(Sys.time(), "%d. %m., %Y")`'
 ```{r setup, message=FALSE, echo = FALSE, results='hide', warning = FALSE}
 knitr::opts_chunk$set(echo=FALSE)
 library(knitr)
-library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
 library(readxl)
 library(here)
 library(cowplot)
